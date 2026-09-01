@@ -1,0 +1,6 @@
+{
+  "name": "Binance Futures Pro Scanner & OrderFlow Terminal",
+  "description": "High-frequency real-time Binance USD-M Futures orderflow scanner, CVD delta analyzer, liquidity heatmap, DOM ladder, and quantitative pattern engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

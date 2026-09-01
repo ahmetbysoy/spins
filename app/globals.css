@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    --color-bg: #0b0e14;
+    --color-panel: #12161f;
+    --color-panel-2: #171c28;
+    --color-edge: #232a37;
+    --color-edge-soft: #1b212d;
+    --color-up: #22c55e;
+    --color-down: #ef4444;
+    --color-watch: #f5b942;
+    --color-accent: #4c8ce0;
+    --color-magenta: #e05bb0;
+    --color-cyan: #22d3ee;
+  }
+
+  html.light {
+    --color-bg: #f8fafc;
+    --color-panel: #ffffff;
+    --color-panel-2: #f1f5f9;
+    --color-edge: #e2e8f0;
+    --color-edge-soft: #cbd5e1;
+  }
+
+  html, body {
+    background-color: var(--color-bg);
+    color: #f1f5f9;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.light body {
+    color: #0f172a;
+  }
+}
+
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Horizontal scroll fade cue mask */
+.mask-fade-right {
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+}
+
+.safe-top {
+  padding-top: var(--sat);
+}
+
+.safe-bottom {
+  padding-bottom: var(--sab);
+}
+
+.card-surface {
+  background: linear-gradient(180deg, #161c28, #11151e);
+  border: 1px solid #232a37;
+  border-radius: 12px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+html.light .card-surface {
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02) inset, 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.glow-up {
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.35), 0 0 24px rgba(34, 197, 94, 0.12);
+}
+
+.glow-down {
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35), 0 0 24px rgba(239, 68, 68, 0.12);
+}
+
+@keyframes flashUp {
+  0% { background-color: rgba(34, 197, 94, 0.25); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flashDown {
+  0% { background-color: rgba(239, 68, 68, 0.25); }
+  100% { background-color: transparent; }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.92); }
+}
+
+.flash-up {
+  animation: flashUp 0.5s ease-out;
+}
+
+.flash-down {
+  animation: flashDown 0.5s ease-out;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-width: 1px;
+}
+
+.dot-pulse {
+  animation: pulseGlow 1.6s ease-in-out infinite;
+}
+
