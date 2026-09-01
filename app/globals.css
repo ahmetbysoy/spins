@@ -112,19 +112,21 @@ html.light .card-surface {
   animation: flashDown 0.5s ease-out;
 }
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: 9999px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  border-width: 1px;
-}
+@layer components {
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border-width: 1px;
+  }
 
-.dot-pulse {
-  animation: pulseGlow 1.6s ease-in-out infinite;
+  .dot-pulse {
+    animation: pulseGlow 1.6s ease-in-out infinite;
+  }
 }
 

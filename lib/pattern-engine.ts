@@ -244,6 +244,11 @@ export function patternCrossesAt(ctx: ReturnType<typeof patternContext>, i: numb
   const trendMa = ctx.ma[ma3] || ctx.ma[50];
   if (i < 1 || !trendMa || trendMa[i] === null) return out;
 
+  // Multi-MA confirmation: 9x50 and 21x50 alignment
+  const ma9 = ctx.ma[9] || ctx.ma[ma1];
+  const ma21 = ctx.ma[21] || ctx.ma[ma2];
+  if (!ma9 || !ma21 || ma9[i] === null || ma21[i] === null) return out;
+
   for (const p of patternPairs(ma1, ma2, ma3)) {
     const f = ctx.ma[p.fast];
     const sl = ctx.ma[p.slow];
@@ -253,6 +258,10 @@ export function patternCrossesAt(ctx: ReturnType<typeof patternContext>, i: numb
     if (f[i - 1]! <= sl[i - 1]! && f[i]! > sl[i]!) dir = 'UP';
     if (f[i - 1]! >= sl[i - 1]! && f[i]! < sl[i]!) dir = 'DOWN';
     if (!dir) continue;
+
+    // Trend alignment check: only allow signals aligned with 50MA
+    if (dir === 'UP' && !(ma9[i]! > trendMa[i]! && ma21[i]! > trendMa[i]!)) continue;
+    if (dir === 'DOWN' && !(ma9[i]! < trendMa[i]! && ma21[i]! < trendMa[i]!)) continue;
 
     const filter: 'F1' | 'F0' = dir === 'UP'
       ? ctx.cs[i].close > trendMa[i]! ? 'F1' : 'F0'

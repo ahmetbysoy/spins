@@ -1358,7 +1358,7 @@ export default function Home() {
   }, [computeFlowSnapshot]);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0d1117] text-slate-100 antialiased font-sans">
+    <div className="app-shell flex flex-col bg-[#0d1117] text-slate-100 antialiased font-sans">
       {/* Top Navbar (Hidden in Fullscreen mode for 100% pure chart immersion) */}
       {!isFullscreen && (
         <Navbar

@@ -40,7 +40,7 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
   const renderFullGrid = () => (
     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
       {/* CVD 60s */}
-      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between">
+      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between transition-colors duration-500">
         <div className="flex items-center justify-between text-slate-400 text-[11px]">
           <span>CVD 60s</span>
           <Activity className="w-3 h-3 text-cyan-400" />
@@ -61,7 +61,7 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
       </div>
 
       {/* OBI (Order Book Imbalance) */}
-      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between">
+      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between transition-colors duration-500">
         <div className="flex items-center justify-between text-slate-400 text-[11px]">
           <span>OBI Imbalance</span>
           <Layers className="w-3 h-3 text-emerald-400" />
@@ -82,7 +82,7 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
       </div>
 
       {/* Open Interest */}
-      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between">
+      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between transition-colors duration-500">
         <div className="flex items-center justify-between text-slate-400 text-[11px]">
           <span>Open Interest</span>
           <TrendingUp className="w-3 h-3 text-amber-400" />
@@ -107,7 +107,7 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
       </div>
 
       {/* Funding Rate */}
-      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between">
+      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between transition-colors duration-500">
         <div className="flex items-center justify-between text-slate-400 text-[11px]">
           <span>Funding Rate</span>
           <Percent className="w-3 h-3 text-purple-400" />
@@ -131,7 +131,7 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
       </div>
 
       {/* Liquidation Volumes 60s */}
-      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between">
+      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between transition-colors duration-500">
         <div className="flex items-center justify-between text-slate-400 text-[11px]">
           <span>Likidasyon 60s</span>
           <ShieldAlert className="w-3 h-3 text-rose-400" />
@@ -147,7 +147,7 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
       </div>
 
       {/* Spread & Ticks */}
-      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between">
+      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between transition-colors duration-500">
         <div className="flex items-center justify-between text-slate-400 text-[11px]">
           <span>Spread / Best</span>
           <ArrowUpDown className="w-3 h-3 text-sky-400" />
@@ -163,7 +163,7 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
       </div>
 
       {/* Walls & Liquidity Clustered */}
-      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between">
+      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between transition-colors duration-500">
         <div className="flex items-center justify-between text-slate-400 text-[11px]">
           <span>Duvarlar (B/A)</span>
           <Zap className="w-3 h-3 text-amber-400" />
@@ -181,7 +181,7 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
       </div>
 
       {/* Taker Momentum */}
-      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between">
+      <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-2 flex flex-col justify-between transition-colors duration-500">
         <div className="flex items-center justify-between text-slate-400 text-[11px]">
           <span>Taker Hızı</span>
           <Activity className="w-3 h-3 text-emerald-400" />
@@ -227,21 +227,21 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
         </span>
       </div>
 
-      <div className="flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
+      <div className="hidden sm:flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
         <span className="text-slate-500 font-bold">Fund:</span>
         <span className={`font-bold ${flow.funding && flow.funding > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
           {flow.funding !== null ? `${(flow.funding * 100).toFixed(4)}%` : '---'}
         </span>
       </div>
 
-      <div className="flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
+      <div className="hidden sm:flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
         <span className="text-slate-500 font-bold">Liq:</span>
         <span className="text-rose-400 font-bold">${compact(flow.longLiq60)}</span>
         <span className="text-slate-600">/</span>
         <span className="text-emerald-400 font-bold">${compact(flow.shortLiq60)}</span>
       </div>
 
-      <div className="flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
+      <div className="hidden sm:flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
         <span className="text-slate-500 font-bold">Duvar:</span>
         <span className="text-emerald-400 font-bold">{flow.wallCount.bid}</span>
         <span className="text-slate-600">/</span>

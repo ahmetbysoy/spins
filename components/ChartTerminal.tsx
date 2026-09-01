@@ -692,11 +692,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               });
             });
 
-            let maxRasterNotional = 1;
-            rasterCells.forEach((c) => {
-              if (c.notional > maxRasterNotional) maxRasterNotional = c.notional;
+            let globalMaxNotional = 1;
+            heatmapFrames.forEach((frame) => {
+              if (frame.max > globalMaxNotional) globalMaxNotional = frame.max;
             });
-            const logMax = Math.log1p(maxRasterNotional);
+            const logMax = Math.log1p(globalMaxNotional);
 
             rasterCells.forEach((cell) => {
               const power = logMax > 0 ? Math.log1p(cell.notional) / logMax : 0.5;

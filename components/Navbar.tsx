@@ -121,15 +121,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="font-mono font-bold text-sm text-slate-100 tracking-wide truncate">{symbol}</span>
-              <span className="pill bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 dot-pulse" /> PERP
-              </span>
+              <span className="font-mono font-bold text-sm text-slate-100 tracking-wide truncate min-w-[61px]">{symbol}</span>
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              <span className={`text-[10px] font-mono font-bold px-1 py-0.5 rounded ${priceChange >= 0 ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'}`}>
-                {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(1)}%
-              </span>
               <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${searchOpen ? 'rotate-180' : ''}`} />
             </div>
           </button>
@@ -233,6 +227,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="font-mono text-right pr-1">
           <div className="text-xs sm:text-sm font-extrabold text-slate-100 tracking-tight">
             ${lastPrice > 0 ? (lastPrice >= 100 ? lastPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : lastPrice.toFixed(4)) : '---'}
+          </div>
+          <div className={`text-[10px] font-mono font-bold ${priceChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(1)}%
           </div>
         </div>
 
