@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isAllowedBinancePath } from '@/lib/proxy-allowlist';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,8 +12,7 @@ export async function GET(
     const fullPath = path.join('/');
 
     // REV-5: Endpoint allowlist
-    const allowedRegex = /^fapi\/v[12]\/[a-zA-Z0-9/]+$/;
-    if (!allowedRegex.test(fullPath)) {
+    if (!isAllowedBinancePath(fullPath)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 400 });
     }
 

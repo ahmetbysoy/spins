@@ -19,7 +19,7 @@ import {
 } from 'lightweight-charts';
 
 // REV-6: LineWidth clamp helper
-const clampWidth = (w: any): LineWidth => Math.min(4, Math.max(1, Math.round(w || 1))) as LineWidth;
+const clampWidth = (w: number | undefined): LineWidth => Math.min(4, Math.max(1, Math.round(w || 1))) as LineWidth;
 import {
   Maximize2,
   Minimize2,
