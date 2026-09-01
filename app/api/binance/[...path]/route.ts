@@ -9,6 +9,13 @@ export async function GET(
   try {
     const { path } = await params;
     const fullPath = path.join('/');
+
+    // REV-5: Endpoint allowlist
+    const allowedRegex = /^fapi\/v[12]\/[a-zA-Z0-9/]+$/;
+    if (!allowedRegex.test(fullPath)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 400 });
+    }
+
     const searchParams = req.nextUrl.searchParams.toString();
     const targetUrl = `https://fapi.binance.com/${fullPath}${searchParams ? `?${searchParams}` : ''}`;
 

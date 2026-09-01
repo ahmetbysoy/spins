@@ -6,15 +6,15 @@
     --sab: env(safe-area-inset-bottom, 0px);
     --sal: env(safe-area-inset-left, 0px);
     --sar: env(safe-area-inset-right, 0px);
-    --color-bg: #0b0e14;
-    --color-panel: #12161f;
-    --color-panel-2: #171c28;
-    --color-edge: #232a37;
-    --color-edge-soft: #1b212d;
+    --color-bg: #0B0E14;
+    --color-panel: #161B22;
+    --color-panel-2: #1A202C;
+    --color-edge: #22272E;
+    --color-edge-soft: #1C2128;
     --color-up: #22c55e;
     --color-down: #ef4444;
-    --color-watch: #f5b942;
-    --color-accent: #4c8ce0;
+    --color-watch: #E0B64C;
+    --color-accent: #E0B64C;
     --color-magenta: #e05bb0;
     --color-cyan: #22d3ee;
   }

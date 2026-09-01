@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { Toaster, toast } from 'sonner';
 import {
   Brain,
   Download,
@@ -27,6 +28,8 @@ import {
   dbIndexGet,
   dbPut
 } from '@/lib/pattern-engine';
+
+const PPOOL_SCHEMA_VERSION = 1;
 
 interface PatternPoolViewProps {
   symbol: string;
@@ -215,6 +218,10 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
       const data = JSON.parse(text);
       
       if (!data || typeof data !== 'object') throw new Error('Geçersiz dosya formatı');
+      if (data.version !== PPOOL_SCHEMA_VERSION) {
+        // Simple version check - could add migration logic here
+        console.warn('Schema version mismatch, proceed with caution');
+      }
 
       const affectedKeys = new Set<string>();
 
@@ -230,21 +237,16 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
         }
       }
 
-      if (Array.isArray(data.poolStats)) {
-        for (const st of data.poolStats) {
-          await dbPut('poolStats', st);
-        }
-      }
-
+      // Re-calculate stats instead of importing stats directly
       for (const key of affectedKeys) {
         await patternRecomputeStats(key);
       }
 
       await loadStats();
-      alert('İçe aktarma başarılı!');
+      toast.success('İçe aktarma başarılı!');
     } catch (err) {
       console.warn('Import error:', err);
-      alert('İçe aktarma başarısız: ' + err);
+      toast.error('İçe aktarma başarısız: ' + err);
     }
   };
 

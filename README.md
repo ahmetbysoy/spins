@@ -12,13 +12,12 @@ SPINS, Binance vadeli piyasaları için geliştirilmiş, ileri düzey orderflow 
 ## Gereksinimler
 
 - Node.js 18+
-- Binance API Key (vadeli işlemler yetkili)
+- API key gerekmez, tüm veriler public endpoint'lerden gelir.
 
 ## Kurulum
 
 1. `npm install`
-2. `.env` dosyasını yapılandırın (Binance API ayarları).
-3. `npm run dev`
+2. `npm run dev`
 
 > [!CAUTION]
 > **Geo-block Uyarısı:** Binance API, bazı bölgelerden gelen isteklere 451 (Unavailable For Legal Reasons) hatası döndürebilir. Uygulamayı deploy ederken `europe-west` gibi Binance'e erişimi olan bölgeleri seçin.

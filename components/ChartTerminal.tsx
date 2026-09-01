@@ -14,8 +14,12 @@ import {
   type LineData,
   type HistogramData,
   type SeriesMarker,
-  type Time
+  type Time,
+  type LineWidth
 } from 'lightweight-charts';
+
+// REV-6: LineWidth clamp helper
+const clampWidth = (w: any): LineWidth => Math.min(4, Math.max(1, Math.round(w || 1))) as LineWidth;
 import {
   Maximize2,
   Minimize2,
@@ -211,22 +215,22 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     // MAs
     ma1SeriesRef.current = chart.addSeries(LineSeries, {
       color: settings.ma1Color || '#e0b64c',
-      lineWidth: (settings.ma1Width as any) || 1,
+      lineWidth: clampWidth(settings.ma1Width),
       priceLineVisible: false,
       lastValueVisible: false
-    }) as any;
+    });
     ma2SeriesRef.current = chart.addSeries(LineSeries, {
       color: settings.ma2Color || '#4c8ce0',
-      lineWidth: (settings.ma2Width as any) || 1,
+      lineWidth: clampWidth(settings.ma2Width),
       priceLineVisible: false,
       lastValueVisible: false
-    }) as any;
+    });
     ma3SeriesRef.current = chart.addSeries(LineSeries, {
       color: settings.ma3Color || '#b06ce0',
-      lineWidth: (settings.ma3Width as any) || 1,
+      lineWidth: clampWidth(settings.ma3Width),
       priceLineVisible: false,
       lastValueVisible: false
-    }) as any;
+    });
 
     // SAR
     sarSeriesRef.current = chart.addSeries(LineSeries, {
@@ -450,15 +454,15 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
     // MAs
     if (ma1SeriesRef.current) {
-      ma1SeriesRef.current.applyOptions({ color: settings.ma1Color || '#e0b64c', lineWidth: (settings.ma1Width as any) || 1 });
+      ma1SeriesRef.current.applyOptions({ color: settings.ma1Color || '#e0b64c', lineWidth: clampWidth(settings.ma1Width) });
       ma1SeriesRef.current.setData(settings.showMa ? mapLineData(ma1) : []);
     }
     if (ma2SeriesRef.current) {
-      ma2SeriesRef.current.applyOptions({ color: settings.ma2Color || '#4c8ce0', lineWidth: (settings.ma2Width as any) || 1 });
+      ma2SeriesRef.current.applyOptions({ color: settings.ma2Color || '#4c8ce0', lineWidth: clampWidth(settings.ma2Width) });
       ma2SeriesRef.current.setData(settings.showMa ? mapLineData(ma2) : []);
     }
     if (ma3SeriesRef.current) {
-      ma3SeriesRef.current.applyOptions({ color: settings.ma3Color || '#b06ce0', lineWidth: (settings.ma3Width as any) || 1 });
+      ma3SeriesRef.current.applyOptions({ color: settings.ma3Color || '#b06ce0', lineWidth: clampWidth(settings.ma3Width) });
       ma3SeriesRef.current.setData(settings.showMa ? mapLineData(ma3) : []);
     }
 
