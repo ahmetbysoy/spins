@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Toaster, toast } from 'sonner';
+import { showToast } from '@/components/ui/toast';
 import {
   Brain,
   Download,
@@ -243,10 +243,10 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
       }
 
       await loadStats();
-      toast.success('İçe aktarma başarılı!');
+      showToast('İçe aktarma başarılı!', 'success');
     } catch (err) {
       console.warn('Import error:', err);
-      toast.error('İçe aktarma başarısız: ' + err);
+      showToast('İçe aktarma başarısız: ' + err, 'error');
     }
   };
 
