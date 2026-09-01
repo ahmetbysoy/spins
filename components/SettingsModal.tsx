@@ -206,14 +206,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* 3. İndikatör Görünürlükleri */}
+        {/* 3. İndikatör Görünürlükleri ve Görünüm */}
         <div className="bg-[#12161c] border border-[#22272e] rounded-xl p-4 flex flex-col gap-3">
           <div className="flex items-center gap-2 border-b border-[#1f252e] pb-2 text-xs font-bold text-slate-200">
             <BarChart2 className="w-4 h-4 text-purple-400" />
-            <span>GRAFİK VE İNDİKATÖR GÖRÜNÜRLÜKLERİ</span>
+            <span>GRAFİK VE İNDİKATÖR AYARLARI</span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
             <label className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between cursor-pointer">
               <span className="text-slate-300 font-medium">MA Çizgileri</span>
               <input
@@ -223,6 +223,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className="w-4 h-4 rounded text-emerald-500"
               />
             </label>
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">MA1:</label>
+              <input type="color" value={settings.ma1Color} onChange={(e) => update('ma1Color', e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+              <input type="number" min={1} max={4} value={settings.ma1Width} onChange={(e) => update('ma1Width', parseInt(e.target.value, 10))} className="w-12 bg-[#11151b] border border-[#2e3640] rounded px-1 text-center" />
+            </div>
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">MA2:</label>
+              <input type="color" value={settings.ma2Color} onChange={(e) => update('ma2Color', e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+              <input type="number" min={1} max={4} value={settings.ma2Width} onChange={(e) => update('ma2Width', parseInt(e.target.value, 10))} className="w-12 bg-[#11151b] border border-[#2e3640] rounded px-1 text-center" />
+            </div>
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">MA3:</label>
+              <input type="color" value={settings.ma3Color} onChange={(e) => update('ma3Color', e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+              <input type="number" min={1} max={4} value={settings.ma3Width} onChange={(e) => update('ma3Width', parseInt(e.target.value, 10))} className="w-12 bg-[#11151b] border border-[#2e3640] rounded px-1 text-center" />
+            </div>
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">SAR:</label>
+              <input type="color" value={settings.sarColor} onChange={(e) => update('sarColor', e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+              <input type="number" min={1} max={4} value={settings.sarWidth} onChange={(e) => update('sarWidth', parseInt(e.target.value, 10))} className="w-12 bg-[#11151b] border border-[#2e3640] rounded px-1 text-center" />
+            </div>
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">BB:</label>
+              <input type="color" value={settings.bbColor} onChange={(e) => update('bbColor', e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+              <input type="number" min={1} max={4} value={settings.bbWidth} onChange={(e) => update('bbWidth', parseInt(e.target.value, 10))} className="w-12 bg-[#11151b] border border-[#2e3640] rounded px-1 text-center" />
+            </div>
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">VWAP:</label>
+              <input type="color" value={settings.vwapColor} onChange={(e) => update('vwapColor', e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+              <input type="number" min={1} max={4} value={settings.vwapWidth} onChange={(e) => update('vwapWidth', parseInt(e.target.value, 10))} className="w-12 bg-[#11151b] border border-[#2e3640] rounded px-1 text-center" />
+            </div>
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">RSI:</label>
+              <input type="color" value={settings.rsiColor} onChange={(e) => update('rsiColor', e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+              <input type="number" min={1} max={4} value={settings.rsiWidth} onChange={(e) => update('rsiWidth', parseInt(e.target.value, 10))} className="w-12 bg-[#11151b] border border-[#2e3640] rounded px-1 text-center" />
+            </div>
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">MACD:</label>
+              <input type="color" value={settings.macdColor} onChange={(e) => update('macdColor', e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+              <input type="number" min={1} max={4} value={settings.macdWidth} onChange={(e) => update('macdWidth', parseInt(e.target.value, 10))} className="w-12 bg-[#11151b] border border-[#2e3640] rounded px-1 text-center" />
+            </div>
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">MACD Sig:</label>
+              <input type="color" value={settings.macdSignalColor} onChange={(e) => update('macdSignalColor', e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+              <input type="number" min={1} max={4} value={settings.macdSignalWidth} onChange={(e) => update('macdSignalWidth', parseInt(e.target.value, 10))} className="w-12 bg-[#11151b] border border-[#2e3640] rounded px-1 text-center" />
+            </div>
 
             <label className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between cursor-pointer">
               <span className="text-slate-300 font-medium">SAR Noktaları</span>

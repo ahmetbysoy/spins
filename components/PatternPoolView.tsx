@@ -24,7 +24,8 @@ import {
   patternGetStats,
   patternBackfillFromCandles,
   dbAdd,
-  dbIndexGet
+  dbIndexGet,
+  dbPut
 } from '@/lib/pattern-engine';
 
 interface PatternPoolViewProps {
@@ -212,18 +213,38 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
     try {
       const text = await file.text();
       const data = JSON.parse(text);
+      
+      if (!data || typeof data !== 'object') throw new Error('Geçersiz dosya formatı');
+
+      const affectedKeys = new Set<string>();
+
       if (Array.isArray(data.events)) {
         for (const ev of data.events) {
           const old = await dbIndexGet('events', 'eventKey', ev.eventKey);
           if (!old) {
             delete ev.id;
             await dbAdd('events', ev);
+            if (ev.patternKey) affectedKeys.add(ev.patternKey);
+            if (ev.coinPatternKey) affectedKeys.add(ev.coinPatternKey);
           }
         }
       }
+
+      if (Array.isArray(data.poolStats)) {
+        for (const st of data.poolStats) {
+          await dbPut('poolStats', st);
+        }
+      }
+
+      for (const key of affectedKeys) {
+        await patternRecomputeStats(key);
+      }
+
       await loadStats();
+      alert('İçe aktarma başarılı!');
     } catch (err) {
       console.warn('Import error:', err);
+      alert('İçe aktarma başarısız: ' + err);
     }
   };
 

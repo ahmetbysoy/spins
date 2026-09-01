@@ -1,4 +1,4 @@
-import { Candle, FlowEvent, FlowSnapshot, LiquidationEvent, SymbolInfo, Ticker24h, TradeEvent } from './types';
+import { Candle, DepthUpdateEvent, FlowEvent, FlowSnapshot, LiquidationEvent, SymbolInfo, Ticker24h, TradeEvent } from './types';
 
 export const REST_BASE = typeof window !== 'undefined' ? '/api/binance' : 'https://fapi.binance.com';
 export const WS_BASE = 'wss://fstream.binance.com';
@@ -172,7 +172,7 @@ export class BinanceStreamClient {
   public asksBook = new Map<number, number>();
   public depthSynced = false;
   public depthLastUpdate = 0;
-  private depthBuffer: any[] = [];
+  private depthBuffer: DepthUpdateEvent[] = [];
   private syncGen = 0;
 
   constructor(symbol: string, interval: string, callbacks: StreamCallbacks) {
@@ -504,8 +504,8 @@ export class BinanceStreamClient {
 
       // Apply buffered diffs with u >= lastUpdateId + 1
       for (const m of this.depthBuffer) {
-        const U = parseInt(m.U, 10);
-        const u = parseInt(m.u, 10);
+        const U = m.U;
+        const u = m.u;
         if (u < this.depthLastUpdate + 1) continue;
         if (U > this.depthLastUpdate + 1) {
           // Gap detected, re-sync snapshot
@@ -532,7 +532,7 @@ export class BinanceStreamClient {
     }
   }
 
-  private handleDepthMessage(data: any, gen: number) {
+  private handleDepthMessage(data: DepthUpdateEvent, gen: number) {
     if (!this.depthSynced) {
       this.depthBuffer.push(data);
       if (this.depthBuffer.length > 2000) {
@@ -541,7 +541,7 @@ export class BinanceStreamClient {
       return;
     }
 
-    const finalId = parseInt(data.u, 10);
+    const finalId = data.u;
     if (finalId <= this.depthLastUpdate) return;
 
     this.applyDepthDiff(data);
@@ -554,7 +554,7 @@ export class BinanceStreamClient {
     });
   }
 
-  private applyDepthDiff(data: any) {
+  private applyDepthDiff(data: DepthUpdateEvent) {
     const bids = data.b || [];
     const asks = data.a || [];
 

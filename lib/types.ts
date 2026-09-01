@@ -237,3 +237,14 @@ export interface PatternEvent {
   barsToMfe?: number;
   barsToMae?: number;
 }
+
+export interface DepthUpdateEvent {
+  e: string; // depthUpdate
+  E: number;
+  T: number;
+  s: string;
+  U: number;
+  u: number;
+  b: [string, string][];
+  a: [string, string][];
+}
