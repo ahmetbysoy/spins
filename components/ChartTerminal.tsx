@@ -31,7 +31,7 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-import { AppSettings, Candle, FlowSnapshot, HeatmapFrame, SignalLogEntry, LiquidationEvent, FlowEvent, SymbolInfo, PatternStats } from '@/lib/types';
+import { AppSettings, Candle, FlowSnapshot, HeatmapFrame, SignalLogEntry, LiquidationEvent, FlowEvent, SymbolInfo, PatternStats, PatternEvent, PatternOverlayState } from '@/lib/types';
 import { bollingerBands, macd, psar, rsi, sma, vwap } from '@/lib/indicators';
 import { intervalToSeconds } from '@/lib/pattern-engine';
 
@@ -51,6 +51,7 @@ interface ChartTerminalProps {
   lastPrice: number;
   symbolInfo?: SymbolInfo | null;
   activePatternStats?: PatternStats | null;
+  patternOverlay?: PatternOverlayState | null;
   onUpdateSetting?: (key: keyof AppSettings, val: any) => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
@@ -62,6 +63,25 @@ const TFS = ['1m', '5m', '15m', '1h', '4h'];
 function snapToBarTime(tsMs: number, tfSec: number): number {
   const sec = Math.floor(tsMs / 1000);
   return Math.floor(sec / tfSec) * tfSec;
+}
+
+// P1.5: Settle olmus desen event'inin MFE/MAE noktasini hesaplar (grafik zamani: saniye).
+function patOutcomePoint(
+  ev: PatternEvent,
+  kind: 'mfe' | 'mae',
+  tfSec: number
+): { time: number; price: number } | null {
+  if (!ev || !ev.refClose || !ev.timestamp) return null;
+  const bars = kind === 'mfe' ? ev.barsToMfe : ev.barsToMae;
+  if (bars == null) return null; // eski (barsToMae'siz) event'lerde nokta cizilemez
+  const magnitude = kind === 'mfe' ? ev.mfe20 || 0 : ev.mae20 || 0;
+  const favorable = kind === 'mfe';
+  const goingUp = ev.dir === 'UP';
+  const priceUpward = (goingUp && favorable) || (!goingUp && !favorable);
+  return {
+    time: Math.floor(ev.timestamp / 1000) + bars * tfSec,
+    price: ev.refClose * (1 + (priceUpward ? 1 : -1) * (magnitude / 100))
+  };
 }
 
 export const ChartTerminal: React.FC<ChartTerminalProps> = ({
@@ -80,6 +100,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   lastPrice,
   symbolInfo,
   activePatternStats,
+  patternOverlay,
   onUpdateSetting,
   isFullscreen = false,
   onToggleFullscreen
@@ -104,6 +125,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const markerPrimitiveRef = useRef<any>(null);
   const mfePriceLineRef = useRef<any>(null);
   const maePriceLineRef = useRef<any>(null);
+  const patLineSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
 
   const lastBarTimeRef = useRef<number | null>(null);
   const overlayRafRef = useRef<number | null>(null);
@@ -510,6 +532,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   }, [indicatorData, settings]);
 
   // Markers: Signals + Liquidations + Whale Events (Separate effect - updates on events, not every tick)
+  // P1.5: overlay cizimlerinde "yuklu mum araliginda mi" kontrolu icin ilk bar zamani (her tick degismez)
+  const firstBarTime = candles.length ? candles[0].time : null;
+
   useEffect(() => {
     if (!chartRef.current || !candleSeriesRef.current) return;
 
@@ -573,6 +598,44 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         });
     }
 
+    // P1.5: Pattern overlay markerlari (giris / MFE / MAE)
+    if (patternOverlay && patternOverlay.events.length) {
+      const firstBar = firstBarTime ?? Infinity;
+      patternOverlay.events.forEach((ev) => {
+        if (ev.timeframe !== interval) return;
+        const entrySec = Math.floor(ev.timestamp / 1000);
+        if (entrySec < firstBar) return; // yuklu mum araliginin disinda
+        const dirUp = ev.dir === 'UP';
+        markers.push({
+          time: entrySec as Time,
+          position: dirUp ? 'belowBar' : 'aboveBar',
+          color: '#8b949e',
+          shape: 'circle',
+          text: `giriş ${dirUp ? 'AL' : 'SAT'}`
+        });
+        const mfe = patOutcomePoint(ev, 'mfe', tfSec);
+        const mae = patOutcomePoint(ev, 'mae', tfSec);
+        if (mfe) {
+          markers.push({
+            time: mfe.time as Time,
+            position: dirUp ? 'aboveBar' : 'belowBar',
+            color: '#26a69a',
+            shape: 'circle',
+            text: `MFE +${(ev.mfe20 || 0).toFixed(2)}%`
+          });
+        }
+        if (mae) {
+          markers.push({
+            time: mae.time as Time,
+            position: dirUp ? 'belowBar' : 'aboveBar',
+            color: '#ef5350',
+            shape: 'circle',
+            text: `MAE -${(ev.mae20 || 0).toFixed(2)}%`
+          });
+        }
+      });
+    }
+
     markers.sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
 
     try {
@@ -590,8 +653,60 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     flowEvents,
     interval,
     settings.showLiq,
-    settings.whaleAlerts
+    settings.whaleAlerts,
+    patternOverlay,
+    firstBarTime
   ]);
+
+  // P1.5: Pattern overlay cizgileri — giris→MFE (yesil) ve giris→MAE (kirmizi) dotted
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    // Eski overlay cizgilerini temizle
+    patLineSeriesRef.current.forEach((s) => {
+      try {
+        chart.removeSeries(s);
+      } catch {
+        // chart yeniden yaratildiysa seri zaten yok
+      }
+    });
+    patLineSeriesRef.current = [];
+
+    if (!patternOverlay || !patternOverlay.events.length || firstBarTime == null) return;
+
+    const tfSec = intervalToSeconds(interval);
+    const firstBar = firstBarTime;
+
+    const addLine = (
+      p1: { time: number; price: number },
+      p2: { time: number; price: number },
+      color: string
+    ) => {
+      const s = chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        lineStyle: LineStyle.Dotted,
+        crosshairMarkerVisible: false
+      });
+      const pts = [p1, p2].sort((a, b) => a.time - b.time);
+      s.setData(pts.map((p) => ({ time: p.time as Time, value: p.price })));
+      patLineSeriesRef.current.push(s);
+    };
+
+    patternOverlay.events.forEach((ev) => {
+      if (ev.timeframe !== interval) return;
+      const entrySec = Math.floor(ev.timestamp / 1000);
+      if (entrySec < firstBar) return;
+      const entry = { time: entrySec, price: ev.refClose };
+      const mfe = patOutcomePoint(ev, 'mfe', tfSec);
+      const mae = patOutcomePoint(ev, 'mae', tfSec);
+      if (mfe) addLine(entry, mfe, '#26a69a');
+      if (mae) addLine(entry, mae, '#ef5350');
+    });
+  }, [patternOverlay, interval, symbol, firstBarTime]);
 
   // Projected MFE / MAE Target Price Lines (F2-3)
   useEffect(() => {

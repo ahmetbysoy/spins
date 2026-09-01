@@ -20,6 +20,7 @@ import {
   HeatmapFrame,
   LiquidationEvent,
   PatternEvent,
+  PatternOverlayState,
   PatternStats,
   SignalLogEntry,
   SymbolInfo,
@@ -51,6 +52,7 @@ import {
   dbAdd,
   dbPut,
   dbIndexGet,
+  dbIndexAll,
   dbAll,
   PPOOL_SCHEMA_VERSION
 } from '@/lib/pattern-engine';
@@ -175,6 +177,8 @@ export default function Home() {
   const [signals, setSignals] = useState<SignalLogEntry[]>([]);
   const [activePatternStats, setActivePatternStats] = useState<PatternStats | null>(null);
   const [activePatternId, setActivePatternId] = useState<string | null>(null);
+  // P1.5: Desen overlay state'i (pool toggle veya sinyal-otomatik)
+  const [patternOverlay, setPatternOverlay] = useState<PatternOverlayState | null>(null);
 
   // Stable references to prevent WebSocket reconnect storms
   const settingsRef = useRef<AppSettings>(settings);
@@ -359,6 +363,7 @@ export default function Home() {
     setEvaluation(null);
     setActivePatternStats(null);
     setActivePatternId(null);
+    setPatternOverlay(null); // P1.5: overlay eski sembole ait
   };
 
   const handleSelectInterval = (tf: string) => {
@@ -380,7 +385,44 @@ export default function Home() {
     setEvaluation(null);
     setActivePatternStats(null);
     setActivePatternId(null);
+    setPatternOverlay(null); // P1.5: overlay eski TF'e ait
   };
+
+  // P1.5: Havuz görünümünden desen overlay toggle — boş events veya aynı key = kapat
+  const handleToggleOverlay = useCallback((key: string, events: PatternEvent[]) => {
+    setPatternOverlay((prev) => {
+      if (!events.length || prev?.key === key) return null;
+      return { key, source: 'pool', events };
+    });
+    if (events.length) setActiveView('chart'); // overlay açılınca grafiğe geç
+  }, []);
+
+  // P1.5: Sinyal ateşlenince aynı desenin son GEÇMİŞ örneğini otomatik grafikte göster
+  // (pool kaynaklı manuel overlay aktifse ona dokunma)
+  useEffect(() => {
+    if (!activePatternId) {
+      setPatternOverlay((prev) => (prev?.source === 'signal' ? null : prev));
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const coinKey = `${symbol}:${interval}:${activePatternId}`;
+        const evs = (await dbIndexAll<PatternEvent>('events', 'coinPatternKey', coinKey))
+          .filter((e) => e.status === 'settled')
+          .sort((a, b) => b.timestamp - a.timestamp);
+        if (cancelled || !evs.length) return;
+        setPatternOverlay((prev) =>
+          prev && prev.source === 'pool' ? prev : { key: coinKey, source: 'signal', events: [evs[0]] }
+        );
+      } catch {
+        // sessiz: overlay dekoratif, sinyal akışını asla bloklamasın
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activePatternId, symbol, interval]);
 
   // 1. Load Exchange Info & 24h Tickers
   useEffect(() => {
@@ -1408,6 +1450,7 @@ export default function Home() {
                 lastPrice={lastPrice}
                 symbolInfo={symbolInfos.find((s) => s.symbol === symbol) || null}
                 activePatternStats={activePatternStats}
+                patternOverlay={patternOverlay}
                 onUpdateSetting={handleUpdateSingleSetting}
                 isFullscreen={isFullscreen}
                 onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
@@ -1499,7 +1542,12 @@ export default function Home() {
         )}
 
         {activeView === 'pool' && (
-          <PatternPoolView symbol={symbol} interval={interval} />
+          <PatternPoolView
+            symbol={symbol}
+            interval={interval}
+            onToggleOverlay={handleToggleOverlay}
+            overlayKey={patternOverlay?.key ?? null}
+          />
         )}
 
         {activeView === 'settings' && (

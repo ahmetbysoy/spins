@@ -11,7 +11,9 @@ import {
   ShieldCheck,
   Flame,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { PatternStats, PatternEvent } from '@/lib/types';
 import { fetchKlines } from '@/lib/binance';
@@ -32,9 +34,13 @@ import {
 interface PatternPoolViewProps {
   symbol: string;
   interval: string;
+  /** P1.5: Desen overlay toggle — parent (page.tsx) overlay state'ini yönetir */
+  onToggleOverlay?: (key: string, events: PatternEvent[]) => void;
+  /** Aktif overlay'in coinPatternKey'i (yoksa null) */
+  overlayKey?: string | null;
 }
 
-export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interval }) => {
+export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interval, onToggleOverlay, overlayKey }) => {
   const [statsList, setStatsList] = useState<PatternStats[]>([]);
   const [selectedPattern, setSelectedPattern] = useState<PatternStats | null>(null);
   const [recentEvents, setRecentEvents] = useState<PatternEvent[]>([]);
@@ -261,6 +267,48 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
     }
   };
 
+  // P1.5: Seçili desenin bu coindeki geçmiş örneklerini grafikte göster/kapat
+  const overlayCoinKey = React.useMemo(() => {
+    if (!selectedPattern) return null;
+    const parts = selectedPattern.key.split(':');
+    const tf = parts.length === 3 ? parts[1] : parts[0];
+    const patId = parts.length === 3 ? parts[2] : parts[1];
+    return { key: `${symbol}:${tf}:${patId}`, tf };
+  }, [selectedPattern, symbol]);
+
+  const overlayActive = !!(overlayCoinKey && overlayKey === overlayCoinKey.key);
+
+  const handleOverlayToggle = async () => {
+    if (!overlayCoinKey || !onToggleOverlay) return;
+
+    if (overlayActive) {
+      onToggleOverlay(overlayCoinKey.key, []); // kapat
+      return;
+    }
+    if (overlayCoinKey.tf !== interval) {
+      showToast(
+        `Bu desen ${overlayCoinKey.tf} zaman diliminde toplanmış; grafikte görmek için ${overlayCoinKey.tf} TF'ine geç.`,
+        'warning'
+      );
+      return;
+    }
+    try {
+      const evs = (await dbIndexAll<PatternEvent>('events', 'coinPatternKey', overlayCoinKey.key))
+        .filter((e) => e.status === 'settled')
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 15); // grafik kalabalıklaşmasın diye son 15 örnek
+      if (!evs.length) {
+        showToast(`${symbol} için bu desenden settle olmuş örnek yok.`, 'info');
+        return;
+      }
+      onToggleOverlay(overlayCoinKey.key, evs);
+      showToast(`${symbol}: ${evs.length} geçmiş örnek grafikte gösteriliyor.`, 'success');
+    } catch (err) {
+      console.warn('Overlay yükleme hatası:', err);
+      showToast('Overlay yüklenemedi: ' + err, 'error');
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#0d1117] p-3 sm:p-4 select-none">
       <div className="card-surface p-4 flex flex-col gap-4 flex-1 min-h-0">
@@ -470,6 +518,21 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
                   </div>
                   <div className="text-[11px] text-purple-400 mt-0.5">{selectedPattern.key}</div>
                 </div>
+
+                {/* P1.5: Grafikte göster/kapat */}
+                {onToggleOverlay && (
+                  <button
+                    onClick={handleOverlayToggle}
+                    className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all touch-manipulation active:scale-95 ${
+                      overlayActive
+                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30'
+                        : 'bg-[#181d24] text-slate-300 border-[#2a3038] hover:text-white hover:border-slate-500'
+                    }`}
+                  >
+                    {overlayActive ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{overlayActive ? 'Grafikten Kaldır' : 'Grafikte Göster (son 15 örnek)'}</span>
+                  </button>
+                )}
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-[#11151b] p-2.5 rounded-lg border border-[#1e242d]">

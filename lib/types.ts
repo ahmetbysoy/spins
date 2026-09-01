@@ -248,3 +248,10 @@ export interface DepthUpdateEvent {
   b: [string, string][];
   a: [string, string][];
 }
+
+// P1.5: Desen event'lerinin grafik üstünde giriş→MFE/MAE çizgileriyle gösterimi
+export interface PatternOverlayState {
+  key: string; // coinPatternKey: COIN:tf:patId
+  source: 'pool' | 'signal';
+  events: PatternEvent[];
+}
