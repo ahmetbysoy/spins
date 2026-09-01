@@ -8,14 +8,9 @@ export async function GET(
 ) {
   try {
     const { path } = await params;
-    let subpath = path.join('/');
-    if (subpath.startsWith('fapi/v1/')) {
-      subpath = subpath.replace(/^fapi\/v1\//, '');
-    } else if (subpath.startsWith('fapi/v2/')) {
-      subpath = subpath.replace(/^fapi\/v2\//, '');
-    }
+    const fullPath = path.join('/');
     const searchParams = req.nextUrl.searchParams.toString();
-    const targetUrl = `https://fapi.binance.com/fapi/v1/${subpath}${searchParams ? `?${searchParams}` : ''}`;
+    const targetUrl = `https://fapi.binance.com/${fullPath}${searchParams ? `?${searchParams}` : ''}`;
 
     const res = await fetch(targetUrl, {
       headers: {
