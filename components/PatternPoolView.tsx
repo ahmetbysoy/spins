@@ -26,10 +26,8 @@ import {
   patternBackfillFromCandles,
   dbAdd,
   dbIndexGet,
-  dbPut
+  PPOOL_SCHEMA_VERSION
 } from '@/lib/pattern-engine';
-
-const PPOOL_SCHEMA_VERSION = 1;
 
 interface PatternPoolViewProps {
   symbol: string;
@@ -193,6 +191,7 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
       const events = await dbAll('events');
       const poolStats = await dbAll('poolStats');
       const data = {
+        version: PPOOL_SCHEMA_VERSION,
         exportedAt: new Date().toISOString(),
         events,
         poolStats
@@ -219,11 +218,16 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
       
       if (!data || typeof data !== 'object') throw new Error('Geçersiz dosya formatı');
       if (data.version !== PPOOL_SCHEMA_VERSION) {
-        // Simple version check - could add migration logic here
-        console.warn('Schema version mismatch, proceed with caution');
+        // REV-9: uyar ama içe aktarmaya devam et (kullanıcı onaylı davranış)
+        showToast(
+          `Şema versiyonu farklı (dosya: ${data.version ?? 'yok'}, beklenen: ${PPOOL_SCHEMA_VERSION}) — yine de içe aktarılıyor.`,
+          'warning'
+        );
       }
 
       const affectedKeys = new Set<string>();
+      let added = 0;
+      let skipped = 0;
 
       if (Array.isArray(data.events)) {
         for (const ev of data.events) {
@@ -231,8 +235,11 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
           if (!old) {
             delete ev.id;
             await dbAdd('events', ev);
+            added++;
             if (ev.patternKey) affectedKeys.add(ev.patternKey);
             if (ev.coinPatternKey) affectedKeys.add(ev.coinPatternKey);
+          } else {
+            skipped++;
           }
         }
       }
@@ -243,7 +250,11 @@ export const PatternPoolView: React.FC<PatternPoolViewProps> = ({ symbol, interv
       }
 
       await loadStats();
-      showToast('İçe aktarma başarılı!', 'success');
+      if (added === 0) {
+        showToast(`0 kayıt eklendi (${skipped} duplicate atlandı) — dosya zaten içe aktarılmış olabilir.`, 'info');
+      } else {
+        showToast(`İçe aktarma tamam: ${added} kayıt eklendi, ${skipped} duplicate atlandı.`, 'success');
+      }
     } catch (err) {
       console.warn('Import error:', err);
       showToast('İçe aktarma başarısız: ' + err, 'error');
