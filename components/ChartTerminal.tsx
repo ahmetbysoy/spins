@@ -44,6 +44,7 @@ import {
   wallAgeKey,
   WALL_ESTABLISHED_MS,
   WALL_MIN_NOTIONAL,
+  type LiquidityWall,
   type WallAgeRecord
 } from '@/lib/liquidity-walls';
 
@@ -951,6 +952,47 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             const now = Date.now();
             const activeKeys = new Set<string>();
             const rayStart = Math.max(0, chartRight - ladderWidth - 65);
+            const wallRecs = new Map<LiquidityWall, WallAgeRecord>();
+
+            // PREDATOR port'u (3/4) — placeLabelY koordinatörü: tüm canvas etiketleri tek
+            // noktadan yerleşir. Blokeli bölgeler: üst sabit UI (legend/tam ekran sembol
+            // seçici), canlı mid fiyat, alt bölge ve native marker'lı barlar (dünkü
+            // 12px-shift hack'inin genel hali — etiket x-bandına düşen markerlar).
+            const blockedZones: [number, number][] = [[0, isFullscreen ? 58 : 36], [height - 64, height]];
+            if (flowSnapshot.bestBid && flowSnapshot.bestAsk) {
+              const bbY = series.priceToCoordinate(flowSnapshot.bestBid);
+              const baY = series.priceToCoordinate(flowSnapshot.bestAsk);
+              if (bbY !== null && baY !== null) {
+                const midY = (bbY + baY) / 2;
+                blockedZones.push([midY - 12, midY + 14]);
+              }
+            }
+            {
+              const tfSecL = intervalToSeconds(interval);
+              const candleByTime = new Map(candles.map((c) => [c.time, c] as const));
+              const mtimes: number[] = [];
+              if (settings.showLiq) liquidations.slice(-20).forEach((l) => mtimes.push(snapToBarTime(l.ts, tfSecL)));
+              if (settings.whaleAlerts) flowEvents.slice(-15).forEach((e) => mtimes.push(snapToBarTime(e.ts, tfSecL)));
+              signals.forEach((s) => mtimes.push(s.ts));
+              const tsc = chart.timeScale();
+              for (const t of mtimes) {
+                const x = tsc.timeToCoordinate(t as Time);
+                const c = candleByTime.get(t);
+                const y = c ? series.priceToCoordinate(c.close) : null;
+                if (x !== null && y !== null && x >= rayStart - 24 && x <= chartRight) blockedZones.push([y - 12, y + 12]);
+              }
+            }
+            const placeLabelY = (base: number, takenList: number[]): number | null => {
+              let y = Math.max(10, Math.min(height - 6, base + 3));
+              for (let step = 0; step < 7; step++) {
+                const cand = y + step * 12;
+                const hit =
+                  takenList.some((v) => Math.abs(v - cand) < 12) ||
+                  blockedZones.some(([a, b]) => cand >= a && cand <= b);
+                if (!hit && cand < height - 8) return cand;
+              }
+              return null; // yer yok → etiket hiç çizilmez (PREDATOR davranışı)
+            };
             for (const wall of walls) {
               const price = rowPrice[Math.round(wall.y / BIN_PX)] || rowPrice[wall.start] || 0;
               const key = wallAgeKey(symbol, price, wall.side, symbolInfo?.tickSize || 0);
@@ -977,12 +1019,44 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               ctx.lineTo(chartRight, wall.y);
               ctx.stroke();
 
-              // Etiket (centroid): ⏱ yerlesikse. 3/4 commit'inde placeLabelY koordinatore gecer
-              ctx.font = '11px monospace';
-              ctx.fillStyle = `rgba(${rgb}, 0.95)`;
-              const tag = `${isEstablished ? '⏱ ' : ''}${isBidWall ? '▲' : '▼'}$${(wall.notional / 1000).toFixed(0)}k`;
-              ctx.fillText(tag, rayStart + 5, Math.max(10, wall.y - 3));
+              wallRecs.set(wall, rec);
             }
+            // PREDATOR etiket seçimi: notional × (1 + dakika yaşı, tavan 3x) sıralı,
+            // maks 10 etiket; sağa hizalı pill, ölçüm genişliği sığmıyorsa çizilmez.
+            const labelX = chartRight - ladderWidth - 8;
+            const taken: number[] = [];
+            walls
+              .slice()
+              .sort((a, b) => {
+                const ageMin = (w: LiquidityWall) => {
+                  const r = wallRecs.get(w);
+                  return r ? Math.min(3, (now - r.first) / 60000) : 0;
+                };
+                return b.notional * (1 + ageMin(b)) - a.notional * (1 + ageMin(a));
+              })
+              .slice(0, 10)
+              .forEach((wall) => {
+                const rec = wallRecs.get(wall);
+                if (!rec) return;
+                if (taken.some((y) => Math.abs(y - wall.y) < 12)) return;
+                const established = now - rec.first >= WALL_ESTABLISHED_MS;
+                const rgb = wall.side === 'B' ? '38, 166, 154' : '239, 83, 80';
+                const label =
+                  (wall.notional >= 1e6 ? `$${(wall.notional / 1e6).toFixed(1)}M` : `$${(wall.notional / 1e3).toFixed(0)}k`) +
+                  (established ? ' ⏱' : '');
+                ctx.font = (established ? 'bold ' : '') + '11px monospace';
+                ctx.textAlign = 'right';
+                const tw = ctx.measureText(label).width;
+                const placed = placeLabelY(wall.y, taken);
+                if (placed === null || tw + 8 > labelX) return;
+                ctx.fillStyle = 'rgba(5,5,8,.78)';
+                ctx.fillRect(labelX - tw - 4, placed - 9, tw + 8, 12);
+                ctx.fillStyle = `rgba(${rgb},.95)`;
+                ctx.fillText(label, labelX, placed);
+                taken.push(placed);
+              });
+            ctx.textAlign = 'left';
+
             pruneWallAges(wallAgesRef.current, activeKeys, now);
           }
 
@@ -1073,7 +1147,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         }
       }
     });
-  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval, symbol, symbolInfo]);
+  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval, symbol, symbolInfo, candles, flowEvents, liquidations, isFullscreen]);
 
   // Clean up RAF on unmount
   useEffect(() => {
