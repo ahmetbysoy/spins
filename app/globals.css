@@ -2,6 +2,31 @@
 
 /* Çok dar ekran breakpoint'i (xs) — sm altı telefonlarda granüler gizleme
    (örn. FlowMetricsPanel OI % eki, sayfa düğme metinleri) */
+/* Android/apk dokunma cilasi (P0) */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a,
+[role='button'] {
+  touch-action: manipulation; /* 300ms cift-tik zoom gecikmesini keser */
+}
+/* Grafik alani: sayfa scroll/jestleriyle yarismasin, mum metni secilmesin */
+.chart-wrap,
+.chart-wrap canvas {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Klavye zoom'u: dokunmatikte form elemanlari 16px alti fontla sayfayi buyutur */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 @theme {
   --breakpoint-xs: 425px;
 }

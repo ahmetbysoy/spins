@@ -6,6 +6,8 @@
 
 ---
 
+> **Uygulandı (2026-09-02):** P0/1 geri tuşu (`lib/back-button.ts` LIFO + `use-android-back`, 4 bağlantı), P0/2 touch-action/tap-highlight/user-select, P0/3 16px input zoom, P0/4 `interactive-widget=resizes-content` (100dvh zaten vardı), P0/5 tam ekran ↙ çıkış butonu; P1/10 PWA manifest + maskable ikon; P2/12 visibilitychange canvas/poll kilidi. Kalan: hover→active, 44px denetimi, haptics, snap scroll, ağ farkındalığı.
+
 ## P0 — APK deneyimini bugün bozanlar
 
 ### 1. Android GERİ tuşu uygulamayı kapatıyor

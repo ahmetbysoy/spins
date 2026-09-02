@@ -19,6 +19,7 @@ import { resolvePendingOutcomes } from '@/lib/signal-outcomes';
 import { DEFAULT_SETTINGS, useAppSettings } from '@/hooks/use-app-settings';
 import { useMarketData } from '@/hooks/use-market-data';
 import { useNotifications } from '@/hooks/use-notifications';
+import { useAndroidBack } from '@/hooks/use-android-back';
 import { useFlowStream } from '@/hooks/use-flow-stream';
 import { usePatternRadar } from '@/hooks/use-pattern-radar';
 import type { ScannerHit } from '@/lib/scanner-engine';
@@ -107,6 +108,9 @@ export default function Home() {
 
   // UI / Layout States
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Android geri tusu: once tam ekran, sonra grafik disi gorunum kapanir (LIFO)
+  useAndroidBack(isFullscreen, () => setIsFullscreen(false));
+  useAndroidBack(activeView !== 'chart', () => setActiveView('chart'));
   const [isSignalOpen, setIsSignalOpen] = useState(false);
 
   // Mini sembol grid'i (çoklu düzen): ana grafik altında 3 hafif kart

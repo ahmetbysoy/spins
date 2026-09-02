@@ -35,6 +35,7 @@ import {
 import { AppSettings, Candle, FlowSnapshot, HeatmapFrame, SignalLogEntry, LiquidationEvent, FlowEvent, SymbolInfo, PatternStats, PatternEvent, PatternOverlayState } from '@/lib/types';
 import { bollingerBands, macd, psar, rsi, sma, vwap } from '@/lib/indicators';
 import { intervalToSeconds } from '@/lib/pattern-engine';
+import { useAndroidBack } from '@/hooks/use-android-back';
 import {
   mergeWalls,
   nonzeroMax,
@@ -159,6 +160,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   // Likidite overlay legend'i (kapatilabilir; tercih localStorage'da)
   const [legendOpen, setLegendOpen] = useState(true);
   const [fsSymOpen, setFsSymOpen] = useState(false);
+  // Android geri tusu: sembol aramayi kapatir (tam ekrandan once)
+  useAndroidBack(fsSymOpen, () => setFsSymOpen(false));
   const [fsQuery, setFsQuery] = useState('');
   useEffect(() => {
     try {
@@ -823,6 +826,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
     overlayRafRef.current = requestAnimationFrame(() => {
       if (!chartRef.current || !candleSeriesRef.current || !containerRef.current) return;
+      // P2: uygulama arka plandayken canvas cizimi atlanir (batarya) — donunce tekrar cizilir
+      if (typeof document !== 'undefined' && document.hidden) {
+        overlayRafRef.current = null;
+        return;
+      }
 
       const chart = chartRef.current;
       const series = candleSeriesRef.current;
@@ -1164,9 +1172,15 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     const ts = chartRef.current.timeScale();
     const handleRangeChange = () => drawOverlays();
     ts.subscribeVisibleLogicalRangeChange(handleRangeChange);
+    // P2: aplikasyon one donunce canvas guncel cizilsin (arkadayken atlandi)
+    const onVis = () => {
+      if (!document.hidden) drawOverlays();
+    };
+    document.addEventListener('visibilitychange', onVis);
     drawOverlays();
     return () => {
       ts.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, [drawOverlays]);
 
@@ -1360,7 +1374,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       </div>
 
       {/* Main Chart Canvas Area */}
-      <div className="flex-1 relative min-h-0 w-full h-full overflow-hidden" ref={containerRef}>
+      <div className="chart-wrap flex-1 relative min-h-0 w-full h-full overflow-hidden" ref={containerRef}>
         {/* Heatmap Canvas */}
         <canvas
           ref={heatmapCanvasRef}
@@ -1375,7 +1389,16 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
         {/* Fullscreen Kompakt Sembol Seçici */}
         {isFullscreen && onSelectSymbol && (
-          <div className="absolute top-2 left-2 z-30 select-none">
+          <div className="absolute top-2 left-2 z-30 select-none flex items-start gap-1.5">
+            {/* P0: mobilde tam ekrandan cikis gorebilir (geri tusu da calisir) */}
+            <button
+              onClick={onToggleFullscreen}
+              aria-label="Tam ekrandan çık"
+              title="Tam ekrandan çık"
+              className="bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-300 backdrop-blur-sm touch-manipulation active:scale-95"
+            >
+              ↙
+            </button>
             <button
               onClick={() => {
                 setFsSymOpen((v) => !v);

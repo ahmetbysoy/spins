@@ -9,6 +9,8 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: 'cover',
   themeColor: '#0b0e14',
+  // Klavye acilinca gorunur alan daralir (karar sutu klavye altinda kalmaz)
+  interactiveWidget: 'resizes-content',
 };
 
 export const metadata: Metadata = {

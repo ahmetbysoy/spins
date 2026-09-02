@@ -100,6 +100,11 @@ export const MiniChartCard: React.FC<MiniChartCardProps> = ({
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const load = async () => {
+      // P2: kart arka plandayken poll atlanir (batarya); one donunce en gec 15sn sonra tazelenir
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (!stopped) timer = setTimeout(load, POLL_MS);
+        return;
+      }
       try {
         const candles: Candle[] = await fetchKlines(symbol, interval, KLINE_LIMIT);
         if (stopped) return;
