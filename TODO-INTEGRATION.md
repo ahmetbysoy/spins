@@ -155,6 +155,13 @@ Kapsam kararı: tam çoklu-pane ChartTerminal + kayıtlı düzen presetleri YOK;
 - `hooks/use-market-data.ts`: exchange info + 24s ticker'lar (15sn).
 - `hooks/use-flow-stream.ts`: WS istemcisi (whale/sweep/delta-burst/absorption/spoof dedektörleri), heatmap örnekleme, klines+backfill, OI/funding poller, akış anlık görüntüsü; sinyal motoru `onClosedCandle` ref'i ile beslenir (reconnect storm koruntu). `resetStreams` (sembol) / `clearEvents` (TF) ayrımı orijinal temizlik davranışını korur.
 
+## PREDATOR PORT'LARI — TAMAMLANDI (2026-09-02)
+Kaynak: `uploads/PREDATOR.html` (analiz: `uploads/PREDATOR-yapisal-analiz.md`). Skorlama motoru ALINMADI (RSI/MACD lineer — Wilson bound'lu desen havuzundan zayıf).
+1. **rest-race + WS dusus modu** (`lib/rest-race.ts`): 5 aday (sunucu proxy -> direct fapi -> 3 CORS proxy), 2'li batch Promise.any, kazanan 5dk cache (`fs_rest_route`), 429/418 Retry-After backoff. WS 12sn acilmazsa 5sn REST polling (klines/aggTrades/premiumIndex/depth) ayni handler'lara.
+2. **liquidity-walls** (`lib/liquidity-walls.ts`): percentileFromBins + mergeWalls (dominance 0.58, intensite sicramasi 0.28, agirlikli centroid) + fiyat-bazli wallAges (tickSize x10, peak/decay). wallPct artik percentile (p90). Duvar yerlesik suresi 25s -> 30s.
+3. **placeLabelY koordinatoru** (ChartTerminal): 7x12px merdiven, blokeli bolgeler (ust UI/mid/alt + native marker x-bandi), yer yoksa etiket cizilmez; maks 10 etiket, notional x yas sirali, saga hizali pill.
+4. **Sinyal oz-skor karti** (`lib/signal-outcomes.ts`): 3/5/7/15dk ✓/✗ chip'leri, mum kapandikca cozumlenir, signalLog'a kalici.
+
 ### GENEL DOĞRULAMA (her görev sonrası)
 ```bash
 npx vitest run        # tüm testler geçmeli (şu an 90)
