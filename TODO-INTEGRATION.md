@@ -164,7 +164,6 @@ Kaynak: `uploads/PREDATOR.html` (analiz: `uploads/PREDATOR-yapisal-analiz.md`). 
 
 ## BACKLOG
 - **Renk körlüğü modu** (orta öncelik): tüm canvas çizimleri (mum up/down, volume, heatmap, ladder, duvar ışınları, MFE/MAE) TEK renk haritasından alsın (`lib/palette.ts`); alternatif palet turuncu `#f97316` / teal `#14b8a6` + mevcut ▲/▼ şekil ayırt edicileri. Ayar: `settings.colorblind` + ayar paneli satırı. Kapsam: ChartTerminal createChart(upColor/downColor) + volume + 4 canvas bloğu + FlowMetricsPanel/OrderFlowLog rozetleri — büyük iş, bilinçli ertelendi.
-- **Telegram bridge** (eski bekleyen).
 
 ### GENEL DOĞRULAMA (her görev sonrası)
 ```bash
@@ -182,6 +181,7 @@ npm run build         # production build başarılı
 - `feat(pool): DB-level ±3 mum dedupe + açılışta açık event settle (E)`
 
 ### YASAKLAR / DİKKAT
+- **Telegram bridge YOK** — kullanıcı açıkça istemiyor; teklif etmek, planlamak, hatırlatmak YOK (kalıcı karar, 2026-09-02).
 - Tailwind class'ını asla runtime'da birleştirme (`bg-emerald-500/${op}` gibi) — Tailwind build-time statik tarama yapar, bu class'lara CSS üretilmez (BacktestPanel `heatColor` ders örneği: çözüm = arkaplanı inline `style` ile ver). Yeni kod eklerken `grep -rn "/\${" components` ile kontrol edin.
 - Mevcut WS lifecycle (ref arkası runSignalEngine) tasarımını bozma (reconnect storm fix'i).
 - `evaluateRawFlow` imzasını koru; Katman 1 tetik akışını değiştirme.
