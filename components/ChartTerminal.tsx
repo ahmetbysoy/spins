@@ -38,6 +38,7 @@ import { AppSettings, Candle, FlowSnapshot, HeatmapFrame, SignalLogEntry, Liquid
 import { bollingerBands, macd, psar, rsi, sma, vwap } from '@/lib/indicators';
 import { intervalToSeconds } from '@/lib/pattern-engine';
 import { useAndroidBack } from '@/hooks/use-android-back';
+import { buzz } from '@/lib/haptics';
 import {
   mergeWalls,
   nonzeroMax,
@@ -229,7 +230,13 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         horzLines: { color: 'rgba(42, 48, 56, 0.4)' }
       },
       crosshair: {
-        mode: 0
+        // Dokunmatikte Magnet: crosshair fiyati mum kapanisina yapisir (yag parmak telafisi);
+        // masaustunde Normal (serbest). Uzun basma inceleme asagidaki efektte.
+        mode:
+          typeof window !== 'undefined' &&
+          window.matchMedia?.('(hover: none) and (pointer: coarse)').matches
+            ? 1
+            : 0
       },
       localization: {
         // crosshair zaman etiketi Turkce: "2 Eyl 14:05" (fiyat formati dokunulmaz)
@@ -465,6 +472,84 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     chart.subscribeCrosshairMove(onMove);
     return () => chart.unsubscribeCrosshairMove(onMove);
   }, [symbol, interval, settings.showRsi, settings.showMacd]);
+
+  // Mobil crosshair (TradingView mobil kalibi): LWC crosshair'i fare olayiyle calisir,
+  // dokunmatikte hic tetiklenmez. Uzun basma (300ms, 12px oynamayla iptal) inceleme
+  // modunu acar: setCrosshairPosition ile yapay crosshair + OHLC satiri beslenir,
+  // surukleyerek mumlar arasinda gezilir; parmak kalkinca kapanir ve kaydirma geri gelir.
+  useEffect(() => {
+    const el = containerRef.current;
+    const chart = chartRef.current;
+    const s = candleSeriesRef.current;
+    if (!el || !chart || !s) return;
+    if (!window.matchMedia?.('(hover: none) and (pointer: coarse)').matches) return; // yalnizca dokunmatik
+
+    let timer: number | null = null;
+    let inspecting = false;
+    let sx = 0;
+    let sy = 0;
+    const clearTimer = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
+    const setPos = (x: number, y: number) => {
+      const price = s.coordinateToPrice(y);
+      const time = chart.timeScale().coordinateToTime(x);
+      if (price !== null && time !== null) chart.setCrosshairPosition(price, time, s);
+    };
+    const exitInspect = () => {
+      if (!inspecting) return;
+      inspecting = false;
+      chart.applyOptions({ handleScroll: true });
+      chart.clearCrosshairPosition();
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      sx = e.clientX;
+      sy = e.clientY;
+      clearTimer();
+      timer = window.setTimeout(() => {
+        timer = null;
+        inspecting = true;
+        chart.applyOptions({ handleScroll: false }); // inceleme sirasinda pan kilidi
+        if (settings.haptics) buzz(10);
+        const r = el.getBoundingClientRect();
+        setPos(sx - r.left, sy - r.top);
+      }, 300);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      if (inspecting) {
+        const r = el.getBoundingClientRect();
+        setPos(e.clientX - r.left, e.clientY - r.top);
+      } else if (timer !== null && Math.hypot(e.clientX - sx, e.clientY - sy) > 12) {
+        clearTimer(); // kullanici kaydirmak istedi — uzun basma iptal
+      }
+    };
+    const onUp = () => {
+      clearTimer();
+      if (inspecting) window.setTimeout(exitInspect, 400);
+    };
+    const onCtx = (e: Event) => {
+      if (inspecting) e.preventDefault(); // uzun basma baglam menusunu engelle
+    };
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    el.addEventListener('contextmenu', onCtx);
+    return () => {
+      clearTimer();
+      exitInspect();
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+      el.removeEventListener('contextmenu', onCtx);
+    };
+  }, [symbol, interval, settings.haptics]);
 
   // Mum kapanis geri sayimi (1sn tick): son bar zamanindan sonraki cizgiye kalan sure
   useEffect(() => {
