@@ -21,6 +21,7 @@ import {
 // REV-6: LineWidth clamp helper
 const clampWidth = (w: number | undefined): LineWidth => Math.min(4, Math.max(1, Math.round(w || 1))) as LineWidth;
 import {
+  LayoutGrid,
   Maximize2,
   Minimize2,
   Layers,
@@ -58,6 +59,9 @@ interface ChartTerminalProps {
   onUpdateSetting?: (key: keyof AppSettings, val: any) => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /** Mini sembol grid'i aç/kapa (page.tsx state'i) */
+  miniOn?: boolean;
+  onToggleMini?: () => void;
 }
 
 const TFS = ['1m', '5m', '15m', '1h', '4h'];
@@ -108,7 +112,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   patternOverlay,
   onUpdateSetting,
   isFullscreen = false,
-  onToggleFullscreen
+  onToggleFullscreen,
+  miniOn,
+  onToggleMini,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartWrapperRef = useRef<HTMLDivElement>(null);
@@ -1114,6 +1120,24 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               </button>
             ))}
           </div>
+
+          {/* Mini Symbol Grid Toggle */}
+          {onToggleMini && (
+            <button
+              onClick={onToggleMini}
+              className={`px-2.5 py-1 rounded-md border flex items-center gap-1 text-xs font-mono font-bold transition-all touch-manipulation active:scale-95 ${
+                miniOn
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                  : 'text-slate-400 hover:text-slate-200 bg-[#161b22] border-[#22272e]'
+              }`}
+              title="Mini sembol grid'i aç/kapat"
+              aria-label="Mini sembol gridini aç veya kapat"
+              aria-pressed={!!miniOn}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="text-[10px] hidden sm:inline">MINI</span>
+            </button>
+          )}
 
           {/* Fullscreen Trigger */}
           <button
