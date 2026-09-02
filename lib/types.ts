@@ -168,6 +168,13 @@ export interface DecisionEvaluation {
   metrics: FlowSnapshot;
 }
 
+export interface SignalOutcome {
+  hit: boolean;
+  pct: number;
+  price: number;
+  time: number;
+}
+
 export interface SignalLogEntry {
   id: string;
   dir: 'AL' | 'SAT';
@@ -181,6 +188,8 @@ export interface SignalLogEntry {
   /** Kalıcılık için bağlam (eski kayıtlarda bulunmayabilir) */
   symbol?: string;
   timeframe?: string;
+  /** PREDATOR port'u (4/4): 3/5/7/15dk sonrası öz-skor; DB'de anahtarlar string olur */
+  outcomes?: Record<number, SignalOutcome>;
 }
 
 export interface PatternStats {

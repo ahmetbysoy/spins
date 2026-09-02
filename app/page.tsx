@@ -15,6 +15,7 @@ import { PatternRadarCard } from '@/components/PatternRadarCard';
 import { MiniChartCard } from '@/components/MiniChartCard';
 import { SettingsModal } from '@/components/SettingsModal';
 import { showToast } from '@/components/ui/toast';
+import { resolvePendingOutcomes } from '@/lib/signal-outcomes';
 import { DEFAULT_SETTINGS, useAppSettings } from '@/hooks/use-app-settings';
 import { useMarketData } from '@/hooks/use-market-data';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -203,6 +204,19 @@ export default function Home() {
       } catch {}
     })();
   }, [signals, symbol, interval]);
+
+  // PREDATOR port'u (4/4): canlı sinyal öz-skor — mum kapandıkça 3/5/7/15dk sonrasının
+  // ✓/✗ sonucu çözümlenir (backtest'ten bağımsız), signalLog'a kalıcı yazılır.
+  useEffect(() => {
+    if (!candles.length || !signals.length) return;
+    const { updated, changed } = resolvePendingOutcomes(candles, signals);
+    if (!changed) return;
+    setSignals(updated);
+    for (const s of updated) {
+      if (!s.outcomes) continue;
+      dbPut('signalLog', { ...s, symbol, timeframe: interval }).catch(() => {});
+    }
+  }, [candles, signals, symbol, interval]);
 
   // Initialize DB and load saved preferences on Mount (safe from SSR hydration mismatch)
   useEffect(() => {

@@ -12,6 +12,7 @@ import {
   ArrowDownRight
 } from 'lucide-react';
 import { FlowEvent, SignalLogEntry } from '@/lib/types';
+import { SIGNAL_OUTCOME_MINUTES } from '@/lib/signal-outcomes';
 
 interface OrderFlowLogProps {
   flowEvents: FlowEvent[];
@@ -175,6 +176,28 @@ export const OrderFlowLog: React.FC<OrderFlowLogProps> = ({ flowEvents, signals 
                   <span>
                     Derece: <strong className="text-cyan-400">{sig.grade}</strong>
                   </span>
+                </div>
+
+                {/* PREDATOR port'u (4/4): öz-skor chip'leri — 3/5/7/15dk ✓/✗ */}
+                <div className="flex flex-wrap gap-1">
+                  {SIGNAL_OUTCOME_MINUTES.map((m) => {
+                    const oc = (sig.outcomes ?? {})[m];
+                    return (
+                      <span
+                        key={m}
+                        className={`text-[9px] font-mono px-1 py-0.5 rounded border ${
+                          !oc
+                            ? 'border-[#22272e] text-slate-500'
+                            : oc.hit
+                              ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
+                              : 'border-rose-500/30 text-rose-400 bg-rose-500/10'
+                        }`}
+                        title={oc ? `@ $${oc.price} · ${new Date(oc.time * 1000).toLocaleTimeString('tr-TR')}` : `${m}dk sonrası bekleniyor`}
+                      >
+                        {oc ? `${m}dk ${oc.hit ? '✓' : '✗'} ${oc.pct >= 0 ? '+' : ''}${oc.pct.toFixed(2)}%` : `${m}dk …`}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             ))
