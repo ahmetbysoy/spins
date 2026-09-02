@@ -1842,7 +1842,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     >
       {!isFullscreen && chromeBar}
 
-      {/* ÜST HABER BANDI (canvas dışı, h-6): sürekli akan fiyat tikleri + sinyal kartları; sağda sabit mini küme (hover okuma + nabız + ⏱) */}
+      {/* ÜST HABER BANDI (canvas dışı, h-6): SOLDA SABİT blok (nabız + OHLC okuması + ⏱ + LİKİDİTE lejantı) + SAĞDA sürekli kayan fiyat/sinyal akışı — iki ayrı flex öğesi, chart'a değmiyor */}
       <div className="h-6 shrink-0 border-b border-[#1f252e] bg-[#0d1117] flex items-center gap-1.5 px-1.5">
         {isFullscreen && onToggleFullscreen && (
           <button
@@ -1900,25 +1900,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             )}
           </div>
         )}
-        <div
-          className={`ticker ${tickerPaused ? 'paused' : ''}`}
-          onPointerDown={() => setTickerRunning(false)}
-          onPointerUp={() => setTickerRunning(true)}
-          onPointerCancel={() => setTickerRunning(true)}
-          onPointerLeave={() => setTickerRunning(true)}
-          title="Banda dokun = duraklat, bırak = kaldığı hızdan devam"
-        >
-          <div ref={topTrackRef} className="ticker-track text-[10px] font-mono">
-            {renderTickerHalf(topTicker, false)}
-            {renderTickerHalf(topTicker, true)}
-          </div>
-        </div>
-        {hoverBar && (
-          <span className="shrink-0 text-[10px] font-mono text-slate-500 hidden sm:inline whitespace-nowrap">
-            H <span className="text-slate-300">{hoverBar.h}</span> L <span className="text-slate-300">{hoverBar.l}</span>{' '}
-            <span className={hoverBar.c >= hoverBar.o ? 'text-emerald-400' : 'text-rose-400'}>C {hoverBar.c}</span>
-          </span>
-        )}
         {/* Dopamin 5 — canlı veri nabzı */}
         <div
           className="flex items-center gap-1.5 shrink-0 select-none"
@@ -1935,11 +1916,57 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             {wsConnected ? 'CANLI' : wsMessage ? 'REST' : 'OFFLINE'}
           </span>
         </div>
+        {/* SABİT OHLC okuması: crosshair hover ?? son mum — bantta durur, akışa karışmaz */}
+        {(() => {
+          const b = hoverBar ?? (lastCandleRef.current
+            ? { time: lastCandleRef.current.time, o: lastCandleRef.current.open, h: lastCandleRef.current.high, l: lastCandleRef.current.low, c: lastCandleRef.current.close, vol: lastCandleRef.current.volume }
+            : null);
+          if (!b) return null;
+          const up = b.c >= b.o;
+          const chg = b.o ? ((b.c - b.o) / b.o) * 100 : 0;
+          const pr = symbolInfo?.pricePrecision ?? 1;
+          const volTxt = b.vol != null ? fmtCompact(b.vol) : '—';
+          return (
+            <>
+              <span className="hidden sm:flex items-center gap-1.5 shrink-0 text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                <span>{new Date(b.time * 1000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
+                <span>O <span className="text-slate-300">{fmtNum(b.o, pr)}</span></span>
+                <span>H <span className="text-slate-300">{fmtNum(b.h, pr)}</span></span>
+                <span>L <span className="text-slate-300">{fmtNum(b.l, pr)}</span></span>
+                <span className={up ? 'text-emerald-400' : 'text-rose-400'}>C {fmtNum(b.c, pr)} ({up ? '+' : ''}{chg.toFixed(2)}%)</span>
+                <span>V <span className="text-slate-300">{volTxt}</span></span>
+              </span>
+              <span className={`sm:hidden shrink-0 text-[10px] font-mono font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {fmtNum(b.c, pr)} {up ? '▲' : '▼'}{Math.abs(chg).toFixed(2)}%
+              </span>
+            </>
+          );
+        })()}
         {countdown !== null && (
           <span className={`shrink-0 text-[10px] font-mono font-bold ${countdown <= 10 ? 'text-amber-400' : 'text-slate-400'}`}>
             ⏱ {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
           </span>
         )}
+        {/* LİKİDİTE lejantı (SABİT, akmaz — lg+ ekranda): işaret açıklaması */}
+        <div className="hidden lg:flex items-center gap-1 shrink-0 text-[10px] font-mono text-slate-500 whitespace-nowrap" title="LİKİDİTE işaretleri">
+          <b className="text-emerald-400">▲ BID</b>
+          <b className="text-rose-400">▼ ASK</b>
+          <span>· ışın=duvar ≥P{settings.wallPct || 90} · ⏱=yerleşik 30s+</span>
+        </div>
+        {/* KAYAN AKIŞ (bant sağı): fiyat tikleri + sinyal kartları */}
+        <div
+          className={`ticker ${tickerPaused ? 'paused' : ''}`}
+          onPointerDown={() => setTickerRunning(false)}
+          onPointerUp={() => setTickerRunning(true)}
+          onPointerCancel={() => setTickerRunning(true)}
+          onPointerLeave={() => setTickerRunning(true)}
+          title="Banda dokun = duraklat, bırak = kaldığı hızdan devam"
+        >
+          <div ref={topTrackRef} className="ticker-track text-[10px] font-mono">
+            {renderTickerHalf(topTicker, false)}
+            {renderTickerHalf(topTicker, true)}
+          </div>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 flex flex-row">
