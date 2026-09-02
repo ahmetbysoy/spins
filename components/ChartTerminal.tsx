@@ -1485,7 +1485,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             return (
               <div
                 className={`absolute left-2 z-30 pointer-events-none select-none bg-[#0d1117]/80 backdrop-blur-sm border border-[#22272e] rounded-md px-2 py-1 text-[10px] font-mono flex flex-wrap items-center gap-x-2 gap-y-0.5 max-w-[92%] ${
-                  isFullscreen ? 'top-12' : legendOpen ? 'top-10' : 'top-2'
+                  isFullscreen ? (legendOpen ? 'top-20' : 'top-12') : legendOpen ? 'top-10' : 'top-2'
                 }`}
               >
                 <span className="text-slate-400">
@@ -1517,6 +1517,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           )}
 
         {/* Heatmap Canvas */}
+        {/* Katman z-merdiveni: grafik(z-auto) < heatmap z-10 < ladder z-20 < HUD kartları z-30 < dropdown z-40 */}
         <canvas
           ref={heatmapCanvasRef}
           className="absolute inset-0 pointer-events-none z-10 opacity-70 mix-blend-screen"
@@ -1588,7 +1589,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           </div>
         )}
 
-        {/* Likidite Overlay Legend */}
+        {/* Likidite Overlay Legend — tam ekranda: seçici top-2 → legend top-12 → OHLC satırı top-20 (z-merdiveni: heatmap canvas yorumu) */}
         {legendOpen && (
           <div className={`absolute left-2 z-30 bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 backdrop-blur-sm text-[10px] font-mono text-slate-400 flex items-center gap-2 select-none ${isFullscreen ? 'top-12' : 'top-2'}`}>
             <span className="text-slate-300 font-bold">LİKİDİTE</span>
