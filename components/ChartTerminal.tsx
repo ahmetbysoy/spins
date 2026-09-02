@@ -165,6 +165,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const [fsSymOpen, setFsSymOpen] = useState(false);
   // Zaman ekseni rotuşları: crosshair mum okuma satırı + mum kapanış geri sayımı
   const [hoverBar, setHoverBar] = useState<{ time: number; o: number; h: number; l: number; c: number; vol?: number } | null>(null);
+  // Dopamin tetikleyici 1: yeni AL/SAT sinyalinde glow-up/glow-down (halo halkasi + kenar flasi)
+  const [pulse, setPulse] = useState<{ x: number; y: number; dir: 'AL' | 'SAT'; key: number } | null>(null);
+  const lastTopSignalIdRef = useRef<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const lastCandleRef = useRef<Candle | null>(null);
   lastCandleRef.current = candles.length ? candles[candles.length - 1] : null;
@@ -550,6 +553,33 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       el.removeEventListener('contextmenu', onCtx);
     };
   }, [symbol, interval, settings.haptics]);
+
+  // Sinyal glow: signals[0] degisince (mount/restore degil) sinyal barinin piksel
+  // konumunda halo tetikle; 1.6sn sonra kendini temizler.
+  useEffect(() => {
+    const top = signals[0];
+    if (!top) {
+      lastTopSignalIdRef.current = null;
+      return;
+    }
+    if (lastTopSignalIdRef.current === top.id) return;
+    const first = lastTopSignalIdRef.current === null;
+    lastTopSignalIdRef.current = top.id;
+    if (first) return; // ilk render / DB restore — eski sinyal icin yanip sonme
+    const chart = chartRef.current;
+    const s = candleSeriesRef.current;
+    if (!chart || !s) return;
+    const x = chart.timeScale().timeToCoordinate(top.ts as Time);
+    const y = s.priceToCoordinate(top.price);
+    if (x === null || y === null) return;
+    setPulse({ x, y, dir: top.dir, key: Date.now() });
+  }, [signals]);
+
+  useEffect(() => {
+    if (!pulse) return;
+    const t = window.setTimeout(() => setPulse(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [pulse]);
 
   // Mum kapanis geri sayimi (1sn tick): son bar zamanindan sonraki cizgiye kalan sure
   useEffect(() => {
@@ -1595,6 +1625,34 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               </div>
             );
           })()}
+
+          {/* Dopamin 1: sinyal glow-up/glow-down — halo halkasi + kenar flasi */}
+          {pulse && (
+            <>
+              <div
+                key={pulse.key}
+                className="fs-signal-ring pointer-events-none absolute z-30 rounded-full"
+                style={{
+                  left: `${pulse.x}px`,
+                  top: `${pulse.y}px`,
+                  width: '46px',
+                  height: '46px',
+                  border: `2px solid ${pulse.dir === 'AL' ? '#22c55e' : '#ef4444'}`,
+                  boxShadow: `0 0 26px 8px ${pulse.dir === 'AL' ? 'rgba(34,197,94,0.55)' : 'rgba(239,68,68,0.55)'}`
+                }}
+              />
+              <div
+                key={`edge-${pulse.key}`}
+                className="fs-edge-flash pointer-events-none absolute inset-0 z-20"
+                style={{
+                  background:
+                    pulse.dir === 'AL'
+                      ? 'linear-gradient(to bottom, rgba(34,197,94,0.30), transparent 16%, transparent 84%, rgba(34,197,94,0.30))'
+                      : 'linear-gradient(to bottom, rgba(239,68,68,0.30), transparent 16%, transparent 84%, rgba(239,68,68,0.30))'
+                }}
+              />
+            </>
+          )}
 
           {/* Mum kapanis geri sayimi: 1m/5m scalp'in saniye bilgisi burada */}
           {countdown !== null && (

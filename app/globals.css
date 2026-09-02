@@ -47,6 +47,42 @@ a,
   }
 }
 
+/* Dopamin 1 — sinyal glow-up/glow-down animasyonlari */
+@keyframes fs-signal-ring {
+  0% {
+    transform: translate(-50%, -50%) scale(0.35);
+    opacity: 0.95;
+  }
+  70% {
+    opacity: 0.3;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.6);
+    opacity: 0;
+  }
+}
+@keyframes fs-edge-flash {
+  0% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.fs-signal-ring {
+  animation: fs-signal-ring 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.fs-edge-flash {
+  animation: fs-edge-flash 0.9s ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fs-signal-ring,
+  .fs-edge-flash {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 @theme {
   --breakpoint-xs: 425px;
 }
