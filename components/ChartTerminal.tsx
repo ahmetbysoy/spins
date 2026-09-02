@@ -1006,7 +1006,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               // alanina dusmesin — canli duvar ile gecmis isi noktalari ayrissin.
               if (settings.showLadder) {
                 const axisWHm = Math.max(58, chart.priceScale('right').width?.() ?? 58);
-                if (x > width - axisWHm - 52) return;
+                if (x > width - axisWHm - (width < 640 ? 38 : 52)) return;
               }
               const slotX = Math.round(x / 4) * 4;
 
@@ -1062,7 +1062,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           // Dinamik fiyat ekseni genisligi (sembol hassasiyetine gore; sabit 58px yerine)
           const axisWidth = Math.max(58, chart.priceScale('right').width?.() ?? 58);
           const chartRight = width - axisWidth;
-          const ladderWidth = 52;
+          // Responsive DOM ladder: dar ekranda (telefon) serit/isin/etiket kuculur,
+          // grafik alani kazanir; masaustunde mevcut olculer korunur.
+          const isNarrowLadder = width < 640;
+          const ladderWidth = isNarrowLadder ? 38 : 52;
+          const rayZone = isNarrowLadder ? 44 : 65;
           const ladderLeft = chartRight - ladderWidth;
 
           // Compact Ladder border divider
@@ -1115,7 +1119,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             const walls = mergeWalls(bidBins, askBins, { threshold, maxNotional, binPx: BIN_PX });
             const now = Date.now();
             const activeKeys = new Set<string>();
-            const rayStart = Math.max(0, chartRight - ladderWidth - 65);
+            const rayStart = Math.max(0, chartRight - ladderWidth - rayZone);
             const wallRecs = new Map<LiquidityWall, WallAgeRecord>();
 
             // PREDATOR port'u (3/4) — placeLabelY koordinatörü: tüm canvas etiketleri tek
@@ -1198,7 +1202,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                 };
                 return b.notional * (1 + ageMin(b)) - a.notional * (1 + ageMin(a));
               })
-              .slice(0, 10)
+              .slice(0, isNarrowLadder ? 6 : 10)
               .forEach((wall) => {
                 const rec = wallRecs.get(wall);
                 if (!rec) return;
@@ -1208,7 +1212,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                 const label =
                   (wall.notional >= 1e6 ? `$${(wall.notional / 1e6).toFixed(1)}M` : `$${(wall.notional / 1e3).toFixed(0)}k`) +
                   (established ? ' ⏱' : '');
-                ctx.font = (established ? 'bold ' : '') + '11px monospace';
+                ctx.font = (established ? 'bold ' : '') + `${isNarrowLadder ? 10 : 11}px monospace`;
                 ctx.textAlign = 'right';
                 const tw = ctx.measureText(label).width;
                 const placed = placeLabelY(wall.y, taken);
@@ -1583,6 +1587,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   C {b.c} ({up ? '+' : ''}{chg.toFixed(2)}%)
                 </span>
                 <span className="text-slate-500">V <span className="text-slate-300">{volTxt}</span></span>
+                {countdown !== null && (
+                  <span className={`sm:hidden font-bold ${countdown <= 10 ? 'text-amber-400' : 'text-slate-400'}`}>
+                    ⏱ {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+                  </span>
+                )}
               </div>
             );
           })()}
@@ -1590,7 +1599,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           {/* Mum kapanis geri sayimi: 1m/5m scalp'in saniye bilgisi burada */}
           {countdown !== null && (
             <div
-              className={`absolute bottom-[34px] right-[76px] z-30 pointer-events-none select-none font-mono text-[11px] font-bold px-1.5 py-0.5 rounded-md border backdrop-blur-sm ${
+              className={`hidden sm:block absolute bottom-[34px] right-[76px] z-30 pointer-events-none select-none font-mono text-[11px] font-bold px-1.5 py-0.5 rounded-md border backdrop-blur-sm ${
                 countdown <= 10
                   ? 'text-amber-400 border-amber-500/40 bg-amber-500/10'
                   : 'text-slate-400 border-[#22272e] bg-[#0d1117]/80'
