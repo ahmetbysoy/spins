@@ -35,6 +35,17 @@ import {
 import { AppSettings, Candle, FlowSnapshot, HeatmapFrame, SignalLogEntry, LiquidationEvent, FlowEvent, SymbolInfo, PatternStats, PatternEvent, PatternOverlayState } from '@/lib/types';
 import { bollingerBands, macd, psar, rsi, sma, vwap } from '@/lib/indicators';
 import { intervalToSeconds } from '@/lib/pattern-engine';
+import {
+  mergeWalls,
+  nonzeroMax,
+  percentileFromBins,
+  pruneWallAges,
+  touchWallAge,
+  wallAgeKey,
+  WALL_ESTABLISHED_MS,
+  WALL_MIN_NOTIONAL,
+  type WallAgeRecord
+} from '@/lib/liquidity-walls';
 
 interface ChartTerminalProps {
   symbol: string;
@@ -140,7 +151,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
   const lastBarTimeRef = useRef<number | null>(null);
   const overlayRafRef = useRef<number | null>(null);
-  const wallAgesRef = useRef<Map<string, number>>(new Map());
+  const wallAgesRef = useRef<Map<string, WallAgeRecord>>(new Map());
 
   // Overlay Canvases
   const heatmapCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -896,131 +907,84 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           ctx.lineTo(ladderLeft, height);
           ctx.stroke();
 
-          const askSlots = new Map<number, { notional: number; price: number }>();
-          const bidSlots = new Map<number, { notional: number; price: number }>();
-          let maxNotional = 1000;
+          // PREDATOR port'u (2/4): dinamik percentile esigi + bitisik birlestirme (merge)
+          // — sabit $15k/slot-duvar modeli emekli. Duvar artiki gorunur satirlarin nonzero
+          // notional dagiliminda p(wallPct) percentile'ini asan, dominance saglam ve
+          // intensitesi surekli run'dir; etiket notional-agirlikli centroid'e oturur.
+          const BIN_PX = 2.5;
+          const rowCount = Math.ceil(height / BIN_PX);
+          const bidBins = new Float64Array(rowCount);
+          const askBins = new Float64Array(rowCount);
+          const rowPrice = new Float64Array(rowCount);
+          const fillBins = (book: Map<number, number>, bins: Float64Array) => {
+            book.forEach((qty, price) => {
+              const y = series.priceToCoordinate(price);
+              if (y === null || y < 0 || y > height) return;
+              const row = Math.min(rowCount - 1, Math.max(0, Math.floor(y / BIN_PX)));
+              bins[row] += price * qty;
+              if (!rowPrice[row]) rowPrice[row] = price;
+            });
+          };
+          fillBins(bidsBook, bidBins);
+          fillBins(asksBook, askBins);
 
-          // Fix H3: calculate notional (price * vol)
-          asksBook.forEach((qty, price) => {
-            const y = series.priceToCoordinate(price);
-            if (y === null || y < 0 || y > height) return;
-            const slotY = Math.round(y / 2.5) * 2.5;
-            const cur = askSlots.get(slotY) || { notional: 0, price };
-            cur.notional += price * qty;
-            askSlots.set(slotY, cur);
-            if (cur.notional > maxNotional) maxNotional = cur.notional;
-          });
+          const { nz, max: maxNotional } = nonzeroMax(bidBins, askBins);
+          if (maxNotional > 0) {
+            const threshold = Math.max(percentileFromBins(nz, (settings.wallPct || 90) / 100), WALL_MIN_NOTIONAL);
+            const logMax = Math.log1p(maxNotional);
 
-          bidsBook.forEach((qty, price) => {
-            const y = series.priceToCoordinate(price);
-            if (y === null || y < 0 || y > height) return;
-            const slotY = Math.round(y / 2.5) * 2.5;
-            const cur = bidSlots.get(slotY) || { notional: 0, price };
-            cur.notional += price * qty;
-            bidSlots.set(slotY, cur);
-            if (cur.notional > maxNotional) maxNotional = cur.notional;
-          });
-
-          // Wall tag <-> native marker cakisma fix'i: marker'li barlarin piksel konumlari;
-          // etiket bolgesine (isimanda yakin) marker duserse etiket 12px yukari kayar.
-          const markerPx: { x: number; y: number }[] = [];
-          {
-            const tfSecL = intervalToSeconds(interval);
-            const candleByTime = new Map(candles.map((c) => [c.time, c] as const));
-            const mtimes: number[] = [];
-            if (settings.showLiq) liquidations.slice(-20).forEach((l) => mtimes.push(snapToBarTime(l.ts, tfSecL)));
-            if (settings.whaleAlerts) flowEvents.slice(-15).forEach((e) => mtimes.push(snapToBarTime(e.ts, tfSecL)));
-            signals.forEach((s) => mtimes.push(s.ts));
-            const tsc = chart.timeScale();
-            for (const t of mtimes) {
-              const x = tsc.timeToCoordinate(t as Time);
-              const c = candleByTime.get(t);
-              const y = c ? series.priceToCoordinate(c.close) : null;
-              if (x !== null && y !== null) markerPx.push({ x, y });
+            // Ladder yogunluk satirlari (intensity = log1p/maxLog)
+            for (let r = 0; r < rowCount; r++) {
+              const isBid = bidBins[r] >= askBins[r];
+              const notional = isBid ? bidBins[r] : askBins[r];
+              if (notional <= 0) continue;
+              const intensity = Math.log1p(notional) / logMax;
+              const barLen = Math.min(ladderWidth, intensity * ladderWidth);
+              ctx.fillStyle = isBid
+                ? `rgba(38, 166, 154, ${(0.35 + intensity * 0.4).toFixed(2)})`
+                : `rgba(239, 83, 80, ${(0.35 + intensity * 0.4).toFixed(2)})`;
+              ctx.fillRect(chartRight - barLen, r * BIN_PX, barLen, BIN_PX);
             }
+
+            // Duvarlar: merge + fiyat-bazli yas takibi (peak/decay, PREDATOR wallAges)
+            const walls = mergeWalls(bidBins, askBins, { threshold, maxNotional, binPx: BIN_PX });
+            const now = Date.now();
+            const activeKeys = new Set<string>();
+            const rayStart = Math.max(0, chartRight - ladderWidth - 65);
+            for (const wall of walls) {
+              const price = rowPrice[Math.round(wall.y / BIN_PX)] || rowPrice[wall.start] || 0;
+              const key = wallAgeKey(symbol, price, wall.side, symbolInfo?.tickSize || 0);
+              const rec = touchWallAge(wallAgesRef.current, key, wall.side, wall.notional, now);
+              activeKeys.add(key);
+              const isEstablished = now - rec.first >= WALL_ESTABLISHED_MS;
+              const isBidWall = wall.side === 'B';
+              const rgb = isBidWall ? '38, 166, 154' : '239, 83, 80';
+
+              // Duvar bar (parlak) + kisa isin (H5 stili korunur)
+              const y0 = wall.start * BIN_PX;
+              const hh = (wall.end - wall.start + 1) * BIN_PX;
+              const wallInt = Math.log1p(wall.notional) / logMax;
+              const wallLen = Math.min(ladderWidth, wallInt * ladderWidth);
+              ctx.fillStyle = `rgba(${rgb}, ${(0.55 + wallInt * 0.3).toFixed(2)})`;
+              ctx.fillRect(chartRight - wallLen, y0, wallLen, Math.max(2, hh));
+              const grad = ctx.createLinearGradient(rayStart, y0, chartRight, y0);
+              grad.addColorStop(0, `rgba(${rgb}, 0)`);
+              grad.addColorStop(1, `rgba(${rgb}, 0.85)`);
+              ctx.strokeStyle = grad;
+              ctx.lineWidth = 1.2;
+              ctx.beginPath();
+              ctx.moveTo(rayStart, wall.y);
+              ctx.lineTo(chartRight, wall.y);
+              ctx.stroke();
+
+              // Etiket (centroid): ⏱ yerlesikse. 3/4 commit'inde placeLabelY koordinatore gecer
+              ctx.font = '11px monospace';
+              ctx.fillStyle = `rgba(${rgb}, 0.95)`;
+              const tag = `${isEstablished ? '⏱ ' : ''}${isBidWall ? '▲' : '▼'}$${(wall.notional / 1000).toFixed(0)}k`;
+              ctx.fillText(tag, rayStart + 5, Math.max(10, wall.y - 3));
+            }
+            pruneWallAges(wallAgesRef.current, activeKeys, now);
           }
-          const wallTagShift = (rayStart: number, slotY: number) =>
-            markerPx.some((m) => m.x >= rayStart - 14 && Math.abs(m.y - slotY) < 24) ? 12 : 0;
-
-          // Draw Asks (Red)
-          askSlots.forEach(({ notional, price }, slotY) => {
-            const barLen = Math.min(ladderWidth, (notional / maxNotional) * ladderWidth);
-            const isWall = (notional / maxNotional) * 100 >= (settings.wallPct || 85) && notional >= 15000;
-            const slotKey = `ask_${slotY}`;
-
-            ctx.fillStyle = isWall ? 'rgba(239, 83, 80, 0.75)' : 'rgba(239, 83, 80, 0.35)';
-            ctx.fillRect(chartRight - barLen, slotY - 1, barLen, 2.5);
-
-            // Fix H5: Short glowing ray and badge instead of screen-crossing line
-            if (isWall) {
-              const now = Date.now();
-              let firstSeen = wallAgesRef.current.get(slotKey);
-              if (!firstSeen) {
-                firstSeen = now;
-                wallAgesRef.current.set(slotKey, firstSeen);
-              }
-              const isEstablished = now - firstSeen >= 25000;
-
-              const rayStart = Math.max(0, chartRight - ladderWidth - 65);
-              const grad = ctx.createLinearGradient(rayStart, slotY, chartRight, slotY);
-              grad.addColorStop(0, 'rgba(239, 83, 80, 0)');
-              grad.addColorStop(1, 'rgba(239, 83, 80, 0.85)');
-              ctx.strokeStyle = grad;
-              ctx.lineWidth = 1.2;
-              ctx.beginPath();
-              ctx.moveTo(rayStart, slotY);
-              ctx.lineTo(chartRight, slotY);
-              ctx.stroke();
-
-              // Mini notional tag (with ⏱ if resting for >= 25s)
-              ctx.font = '11px monospace';
-              ctx.fillStyle = 'rgba(239, 83, 80, 0.95)';
-              const tag = `${isEstablished ? '⏱ ' : ''}▼$${(notional / 1000).toFixed(0)}k`;
-              ctx.fillText(tag, rayStart + 5, slotY - 3 - wallTagShift(rayStart, slotY));
-            } else {
-              wallAgesRef.current.delete(slotKey);
-            }
-          });
-
-          // Draw Bids (Green)
-          bidSlots.forEach(({ notional, price }, slotY) => {
-            const barLen = Math.min(ladderWidth, (notional / maxNotional) * ladderWidth);
-            const isWall = (notional / maxNotional) * 100 >= (settings.wallPct || 85) && notional >= 15000;
-            const slotKey = `bid_${slotY}`;
-
-            ctx.fillStyle = isWall ? 'rgba(38, 166, 154, 0.75)' : 'rgba(38, 166, 154, 0.35)';
-            ctx.fillRect(chartRight - barLen, slotY - 1, barLen, 2.5);
-
-            // Fix H5: Short glowing ray and badge instead of screen-crossing line
-            if (isWall) {
-              const now = Date.now();
-              let firstSeen = wallAgesRef.current.get(slotKey);
-              if (!firstSeen) {
-                firstSeen = now;
-                wallAgesRef.current.set(slotKey, firstSeen);
-              }
-              const isEstablished = now - firstSeen >= 25000;
-
-              const rayStart = Math.max(0, chartRight - ladderWidth - 65);
-              const grad = ctx.createLinearGradient(rayStart, slotY, chartRight, slotY);
-              grad.addColorStop(0, 'rgba(38, 166, 154, 0)');
-              grad.addColorStop(1, 'rgba(38, 166, 154, 0.85)');
-              ctx.strokeStyle = grad;
-              ctx.lineWidth = 1.2;
-              ctx.beginPath();
-              ctx.moveTo(rayStart, slotY);
-              ctx.lineTo(chartRight, slotY);
-              ctx.stroke();
-
-              // Mini notional tag (with ⏱ if resting for >= 25s)
-              ctx.font = '11px monospace';
-              ctx.fillStyle = 'rgba(38, 166, 154, 0.95)';
-              const tag = `${isEstablished ? '⏱ ' : ''}▲$${(notional / 1000).toFixed(0)}k`;
-              ctx.fillText(tag, rayStart + 5, slotY - 3 - wallTagShift(rayStart, slotY));
-            } else {
-              wallAgesRef.current.delete(slotKey);
-            }
-          });
 
           // Current Spread Ray
           if (flowSnapshot.bestBid && flowSnapshot.bestAsk) {
@@ -1109,7 +1073,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         }
       }
     });
-  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval, candles, flowEvents, liquidations]);
+  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval, symbol, symbolInfo]);
 
   // Clean up RAF on unmount
   useEffect(() => {
@@ -1396,7 +1360,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               <span className="text-rose-400 font-bold">▼ ASK</span>
             </span>
             <span>ışın=duvar ≥ P{settings.wallPct || 90}</span>
-            <span>⏱ yerleşik 25s+</span>
+            <span>⏱ yerleşik 30s+</span>
             <button
               onClick={() => {
                 setLegendOpen(false);
