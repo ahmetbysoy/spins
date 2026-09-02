@@ -182,7 +182,7 @@ export const MarketScanner: React.FC<MarketScannerProps> = ({
                       className={`w-9 h-9 rounded-lg flex items-center justify-center border transition-colors shrink-0 touch-manipulation active:scale-95 ${
                         isF
                           ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
-                          : 'bg-[#181e26] border-[#29323f] text-slate-600'
+                          : 'bg-[#181e26] border-[#29323f] text-slate-500'
                       }`}
                     >
                       <Star className="w-4 h-4 fill-current" />

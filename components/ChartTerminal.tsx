@@ -80,6 +80,8 @@ interface ChartTerminalProps {
   /** Bağlantı durumu (canlı nabız — dopamin 5) */
   wsConnected?: boolean;
   wsMessage?: string;
+  /** WS koptuğunda manuel "Şimdi dene" (useFlowStream.reconnect) */
+  onReconnect?: () => void;
   /** Mini sembol grid'i aç/kapa (page.tsx state'i) */
   miniOn?: boolean;
   onToggleMini?: () => void;
@@ -136,6 +138,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   onToggleFullscreen,
   wsConnected = false,
   wsMessage = '',
+  onReconnect,
   miniOn,
   onToggleMini,
 }) => {
@@ -187,6 +190,22 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const liqSeenRef = useRef<string | null>(null);
   const flowEvtSeenRef = useRef<string | null>(null);
   const spikeBarRef = useRef<number | null>(null);
+  // Bağlantı koptuğunda geçen süreyi say (chip: "⟳ 7s") — otomatik retry 1.5x geri çekilmeyle sürüyor
+  const [discSec, setDiscSec] = useState<number | null>(null);
+  const discAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (wsConnected) {
+      discAtRef.current = null;
+      setDiscSec(null);
+      return;
+    }
+    discAtRef.current = Date.now();
+    setDiscSec(0);
+    const t = setInterval(() => {
+      setDiscSec(Math.floor((Date.now() - (discAtRef.current ?? Date.now())) / 1000));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [wsConnected]);
   // Bant beslemeleri interval içinde güncel snapshot okur
   const fsSnapRef = useRef(flowSnapshot);
   fsSnapRef.current = flowSnapshot;
@@ -245,9 +264,10 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candleCount, firstCandleTime, lastCandleTime, settings]);
 
-  // Initialize Lightweight Charts
+  // Initialize Lightweight Charts (veri yokken chart-wrap render edilmez → skeleton gösterilir)
+  const hasData = candles.length > 0;
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!hasData || !containerRef.current) return;
 
     const chart = createChart(containerRef.current, {
       layout: {
@@ -468,7 +488,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       chartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasData]);
 
   // Update scale margins dynamically when RSI/MACD toggled
   useEffect(() => {
@@ -1584,7 +1604,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             </span>
           ))
         ) : (
-          <span className="text-slate-600">akış bekleniyor…</span>
+          <span className="text-slate-500">akış bekleniyor…</span>
         )}
       </span>
     );
@@ -1847,7 +1867,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         {isFullscreen && onToggleFullscreen && (
           <button
             onClick={onToggleFullscreen}
-            className="shrink-0 bg-[#161b22] border border-[#22272e] rounded-md px-2 py-1 text-[11px] font-mono font-bold text-slate-300 touch-manipulation active:scale-95"
+            className="touch-target-44 shrink-0 bg-[#161b22] border border-[#22272e] rounded-md px-2 py-1 text-[11px] font-mono font-bold text-slate-300 touch-manipulation active:scale-95"
             aria-label="Tam ekrandan çık"
             title="Tam ekrandan çık (geri tuşu da çalışır)"
           >
@@ -1863,7 +1883,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               }}
               aria-haspopup="listbox"
               aria-expanded={fsSymOpen}
-              className="bg-[#161b22] border border-[#22272e] rounded-md px-2 py-1 text-[11px] font-mono font-bold text-slate-200 touch-manipulation active:scale-95"
+              className="touch-target-44 bg-[#161b22] border border-[#22272e] rounded-md px-2 py-1 text-[11px] font-mono font-bold text-slate-200 touch-manipulation active:scale-95"
             >
               {symbol} <span className="text-slate-500 text-[8px]">▼</span>
             </button>
@@ -1900,22 +1920,41 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             )}
           </div>
         )}
-        {/* Dopamin 5 — canlı veri nabzı */}
+        {/* Dopamin 5 — canlı veri nabzı / bağlantı chip'i: koptuğunda geçen süre + Şimdi dene */}
+        {wsConnected ? (
         <div
           className="flex items-center gap-1.5 shrink-0 select-none"
-          title={wsMessage || (wsConnected ? 'Canlı veri akışı aktif' : 'Yeniden bağlanıyor…')}
+          title="Canlı veri akışı aktif"
         >
           <span className="relative flex h-2.5 w-2.5">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                wsConnected ? 'fs-live-dot' : wsMessage ? 'bg-amber-400' : 'bg-rose-500'
-              }`}
-            />
+            <span className="h-2.5 w-2.5 rounded-full fs-live-dot" />
           </span>
-          <span className={`text-[10px] font-bold ${wsConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
-            {wsConnected ? 'CANLI' : wsMessage ? 'REST' : 'OFFLINE'}
-          </span>
+          <span className="text-[11px] font-bold text-emerald-400">CANLI</span>
         </div>
+        ) : (
+        <div
+          className="flex items-center gap-1.5 shrink-0 select-none"
+          title={wsMessage || 'Bağlantı koptu — otomatik yeniden deneme sürüyor (1.5x geri çekilme, en çok 25sn)'}
+        >
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-pulse" />
+          </span>
+          <span className="text-[11px] font-bold text-amber-400 whitespace-nowrap">
+            ⟳ {discSec != null ? `${discSec}s` : '…'}
+          </span>
+          {wsMessage && <span className="text-[10px] font-bold text-slate-500">REST</span>}
+          {onReconnect && (
+            <button
+              onClick={onReconnect}
+              className="touch-target-44 text-[10px] font-bold text-slate-200 bg-[#161b22] border border-[#22272e] rounded-md px-2 py-1 touch-manipulation active:scale-95 whitespace-nowrap"
+              aria-label="Şimdi yeniden bağlanmayı dene"
+              title="Otomatik beklemeyi beklemeden hemen dene"
+            >
+              Şimdi dene
+            </button>
+          )}
+        </div>
+        )}
         {/* SABİT OHLC okuması: crosshair hover ?? son mum — bantta durur, akışa karışmaz */}
         {(() => {
           const b = hoverBar ?? (lastCandleRef.current
@@ -1970,7 +2009,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       </div>
 
       <div className="flex-1 min-h-0 flex flex-row">
-      {/* Main Chart Canvas Area */}
+      {/* Main Chart Canvas Area: veri varken canvas'lar, yokken skeleton (layout aynı, kayma yok) */}
+      {hasData ? (
       <div className="chart-wrap flex-1 relative min-h-0 w-full h-full overflow-hidden" ref={containerRef}>
         {/* chart-wrap = YALNIZCA canvas'lar: fiyat/hacim (lightweight-charts, containerRef'e runtime enjekte) + heatmap z-10 + domOverlay z-20. Metin/bant/rozet canvas üstünde DOM yok. */}
         <canvas
@@ -1985,6 +2025,22 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         />
 
       </div>
+      ) : (
+      /* Skeleton: ilk mumlar gelene kadar — gerçek layout boyutunda, shimmer 1.6s */
+      <div className="flex-1 min-h-0 relative overflow-hidden bg-[#0d1117] chart-skel" role="status" aria-label="Grafik verisi yükleniyor">
+        <div className="chart-skel-bars" aria-hidden>
+          {Array.from({ length: 18 }).map((_, i) => (
+            <span key={i} />
+          ))}
+        </div>
+        <div className="chart-skel-vol" aria-hidden>
+          {Array.from({ length: 18 }).map((_, i) => (
+            <span key={i} />
+          ))}
+        </div>
+        <span className="chart-skel-text text-[11px] font-mono">BAĞLANIYOR · ilk mumlar yükleniyor…</span>
+      </div>
+      )}
         {/* Akış rozetleri (canvas'ın YANI): ⚡/👻/🐋 mumların üstünde değil yanında */}
         <div className="flex w-12 shrink-0 flex-col gap-1 p-1 border-l border-[#1f252e] bg-[#0d1117] overflow-hidden">
           {flowChips.map((c) => (

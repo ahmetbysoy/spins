@@ -173,7 +173,7 @@ export const MiniChartCard: React.FC<MiniChartCardProps> = ({
               e.stopPropagation();
               onRemove(symbol);
             }}
-            className="text-slate-600 hover:text-rose-400 px-1 min-h-[28px] leading-none"
+            className="text-slate-500 hover:text-rose-400 px-1 min-h-[28px] leading-none"
             aria-label={`${symbol} kartını kaldır`}
           >
             <X className="w-3 h-3" />
@@ -184,7 +184,7 @@ export const MiniChartCard: React.FC<MiniChartCardProps> = ({
       {/* Mini grafik */}
       <div ref={containerRef} className="flex-1 min-h-0 w-full" />
       {!loaded && !error && (
-        <div className="absolute inset-0 top-5 flex items-center justify-center text-[9px] text-slate-600 font-mono">
+        <div className="absolute inset-0 top-5 flex items-center justify-center text-[9px] text-slate-500 font-mono">
           yükleniyor…
         </div>
       )}

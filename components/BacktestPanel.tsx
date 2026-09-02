@@ -338,7 +338,7 @@ export const BacktestPanel: React.FC = () => {
             </div>
           </div>
 
-          <p className="text-[10px] text-slate-600 font-mono text-center pb-2">
+          <p className="text-[10px] text-slate-500 font-mono text-center pb-2">
             ret10: kurgudan 10 mum sonraki yön-düzeltmeli getiri (%) · MFE/MAE: 20 mum içinde en iyi/en kötü sapma ·
             R: 0.3% stop varsayımıyla kat · Geçmiş performans gelecek getiriyi garanti etmez.
           </p>

@@ -1058,6 +1058,7 @@ export default function Home() {
                 onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
                 wsConnected={wsConnected}
           wsMessage={wsMessage}
+          onReconnect={handleReconnect}
           miniOn={miniOn}
                 onToggleMini={() => setMiniOn((v) => !v)}
               />
@@ -1102,7 +1103,7 @@ export default function Home() {
                     />
                   ))}
                   {miniSyms.length === 0 && (
-                    <div className="col-span-3 flex items-center justify-center h-full text-[10px] text-slate-600 font-mono border border-dashed border-[#22272e] rounded-lg">
+                    <div className="col-span-3 flex items-center justify-center h-full text-[10px] text-slate-500 font-mono border border-dashed border-[#22272e] rounded-lg">
                       Kart ekle (+) ya da Tarayıcı{`'`}dan sembol seç
                     </div>
                   )}

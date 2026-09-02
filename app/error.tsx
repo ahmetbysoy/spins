@@ -26,7 +26,7 @@ export default function Error({
           sayfayı yeniden denemek genellikle yeterli.
         </p>
         {error.digest && (
-          <p className="text-[10px] text-slate-600 font-mono">Hata kodu: {error.digest}</p>
+          <p className="text-[10px] text-slate-500 font-mono">Hata kodu: {error.digest}</p>
         )}
         <button
           onClick={reset}

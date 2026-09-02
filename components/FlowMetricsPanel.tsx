@@ -237,14 +237,14 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
       <div className="flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
         <span className="text-slate-500 font-bold">Liq:</span>
         <span className="text-rose-400 font-bold">${compact(flow.longLiq60)}</span>
-        <span className="text-slate-600">/</span>
+        <span className="text-slate-500">/</span>
         <span className="text-emerald-400 font-bold">${compact(flow.shortLiq60)}</span>
       </div>
 
       <div className="flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
         <span className="text-slate-500 font-bold">Duvar:</span>
         <span className="text-emerald-400 font-bold">{flow.wallCount.bid}</span>
-        <span className="text-slate-600">/</span>
+        <span className="text-slate-500">/</span>
         <span className="text-rose-400 font-bold">{flow.wallCount.ask}</span>
       </div>
     </div>

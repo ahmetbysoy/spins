@@ -112,6 +112,14 @@ a,
   to { transform: translateX(-50%); }
 }
 /* Dokunma: duraklat (bırakınca kaldığı yerden/kalan hızla devam) */
+.ticker::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -10px;
+  bottom: -10px; /* dokunma hedefi ~44px, gorsel h-6 kalir */
+}
 .ticker.paused .ticker-track {
   animation-play-state: paused;
 }
@@ -137,6 +145,95 @@ a,
   }
   .tick-flash {
     animation: none;
+  }
+}
+
+/* Sayilar hizali kalsin: fiyat/pnl rakamlari kaymasin */
+@layer base {
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Dokunma hedefi 44px: goruntu ayni, dokunma alani genisler (mobil erisilebilirlik) */
+.touch-target-44 {
+  position: relative;
+}
+.touch-target-44::after {
+  content: '';
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  top: -10px;
+  bottom: -10px;
+}
+
+/* Chart skeleton: ilk mumlar gelene kadar — mum siluetleri + hacim seridi + shimmer */
+.chart-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+.chart-skel-bars {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+}
+.chart-skel-bars > span {
+  flex: 1 1 0%;
+  border-radius: 2px 2px 0 0;
+  background: #1c232c;
+  min-height: 8%;
+}
+.chart-skel-bars > span:nth-of-type(4n + 1) { height: 46%; }
+.chart-skel-bars > span:nth-of-type(4n + 2) { height: 72%; }
+.chart-skel-bars > span:nth-of-type(4n + 3) { height: 34%; }
+.chart-skel-bars > span:nth-of-type(4n + 4) { height: 58%; }
+.chart-skel-bars > span:nth-of-type(3n) { height: 84%; }
+.chart-skel-vol {
+  height: 12%;
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+}
+.chart-skel-vol > span {
+  flex: 1 1 0%;
+  border-radius: 1px;
+  background: #161c24;
+}
+.chart-skel-vol > span:nth-of-type(3n + 1) { height: 40%; }
+.chart-skel-vol > span:nth-of-type(3n + 2) { height: 75%; }
+.chart-skel-vol > span:nth-of-type(3n) { height: 100%; }
+.chart-skel-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 50%;
+  transform: translateY(50%);
+  text-align: center;
+  color: #6b7683;
+  letter-spacing: 0.08em;
+}
+.chart-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 32%, rgba(139, 148, 158, 0.07) 50%, transparent 68%);
+  background-size: 220% 100%;
+  animation: chart-skel-shimmer 1.6s linear infinite;
+  pointer-events: none;
+}
+@keyframes chart-skel-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-skel::after {
+    animation: none;
+    background: none;
   }
 }
 
