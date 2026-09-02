@@ -70,63 +70,73 @@ a,
   animation: fs-live 1.6s ease-out infinite;
 }
 
-/* Dopamin 1 — sinyal glow-up/glow-down animasyonlari */
-@keyframes fs-signal-ring {
-  0% {
-    transform: translate(-50%, -50%) scale(0.35);
-    opacity: 0.95;
-  }
-  70% {
-    opacity: 0.3;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(2.6);
-    opacity: 0;
-  }
-}
-@keyframes fs-edge-flash {
-  0% {
-    opacity: 0.55;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-.fs-signal-ring {
-  animation: fs-signal-ring 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-.fs-edge-flash {
-  animation: fs-edge-flash 0.9s ease-out forwards;
-}
-@media (prefers-reduced-motion: reduce) {
-  .fs-signal-ring,
-  .fs-edge-flash {
-    animation: none;
-    opacity: 0;
-  }
-}
-
-/* Kayan bantlar: ust LİKİDİTE akisi + alt DUVAR tekeri (chart disi DOM bantlari) */
-.fs-marquee {
+/* ============ Sürekli haber bandı (marquee) ============
+   İçerik iki kez art arda render edilir; track translateX(0 → -50%)
+   ile kayar → ikinci kopya birincinin yerine geçerken dikişsiz döngü.
+   Sağdan sola klasik haber bandı yönü. Hız, Web Animations API
+   playbackRate ile ayarlanır (duration'a dokunulmaz → sıçrama olmaz). */
+.ticker {
+  position: relative;
+  overflow: hidden;
+  flex: 1 1 0%;
+  min-width: 0;
+  height: 100%;
   display: flex;
-  width: max-content;
-  min-width: 200%;
-  animation: fs-marquee 22s linear infinite;
+  align-items: center;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: pan-y; /* dikey sayfa kaydırmayı bloklamaz; banda dokunmak duraklatır */
 }
-.fs-marquee > span {
+.ticker-track {
+  display: flex;
   flex: 0 0 auto;
-  min-width: 50%;
-  white-space: nowrap;
-  padding-right: 3rem;
+  width: max-content;
+  animation: ticker-scroll 26s linear infinite;
+  will-change: transform;
 }
-@keyframes fs-marquee {
+.ticker-half {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  white-space: nowrap;
+  gap: 1.25rem;
+  padding-right: 1.25rem; /* dikiş noktasındaki boşluk = öğe arası boşluk */
+}
+.ticker-half > span {
+  flex: 0 0 auto;
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+}
+@keyframes ticker-scroll {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
+/* Dokunma: duraklat (bırakınca kaldığı yerden/kalan hızla devam) */
+.ticker.paused .ticker-track {
+  animation-play-state: paused;
+}
+/* Akışa yeni giren öğenin kısa parlaması */
+.tick-flash {
+  animation: tick-flash 1.3s ease-out 1;
+}
+@keyframes tick-flash {
+  0% {
+    background-color: rgba(45, 212, 191, 0.3);
+    text-shadow: 0 0 8px rgba(45, 212, 191, 0.5);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .fs-marquee {
+  .ticker-track {
     animation: none;
-    transform: none;
+  }
+  .ticker-half + .ticker-half {
+    display: none; /* hareket yoksa kopyaya gerek yok */
+  }
+  .tick-flash {
+    animation: none;
   }
 }
 

@@ -39,7 +39,8 @@ import { bollingerBands, macd, psar, rsi, sma, vwap } from '@/lib/indicators';
 import { intervalToSeconds } from '@/lib/pattern-engine';
 import { useAndroidBack } from '@/hooks/use-android-back';
 import { buzz } from '@/lib/haptics';
-import { volumeBarColor } from '@/lib/volume-spike';
+import { volumeBarColor, isVolumeSpike, VOL_SPIKE_LOOKBACK } from '@/lib/volume-spike';
+import { pushTickerItem, priceTickText, metricsText, computeHype, fmtCompact, fmtNum, type TickerItem, type TickerKind } from '@/lib/ticker';
 import {
   mergeWalls,
   nonzeroMax,
@@ -176,7 +177,21 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const pillsRef = useRef<HTMLDivElement>(null);
   const lastTopSignalIdRef = useRef<string | null>(null);
   // Duvar tekeri (alt bant): drawOverlays içinden beslenir
-  const [wallTicker, setWallTicker] = useState<string[]>([]);
+  const [topTicker, setTopTicker] = useState<TickerItem[]>([]);
+  const [botTicker, setBotTicker] = useState<TickerItem[]>([]);
+  const [tickerPaused, setTickerPaused] = useState(false);
+  const topTrackRef = useRef<HTMLDivElement | null>(null);
+  const botTrackRef = useRef<HTMLDivElement | null>(null);
+  const lastTickPriceRef = useRef<number | null>(null);
+  const lastTickAtRef = useRef(0);
+  const liqSeenRef = useRef<string | null>(null);
+  const flowEvtSeenRef = useRef<string | null>(null);
+  const spikeBarRef = useRef<number | null>(null);
+  // Bant beslemeleri interval içinde güncel snapshot okur
+  const fsSnapRef = useRef(flowSnapshot);
+  fsSnapRef.current = flowSnapshot;
+  const pushTop = useCallback((item: TickerItem) => setTopTicker((b) => pushTickerItem(b, item)), []);
+  const pushBot = useCallback((item: TickerItem) => setBotTicker((b) => pushTickerItem(b, item)), []);
   const wallTickerRef = useRef('');
   const [fsSymOpen, setFsSymOpen] = useState(false);
   // Zaman ekseni rotuşları: crosshair mum okuma satırı + mum kapanış geri sayımı
@@ -1130,7 +1145,10 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               const joined = lines3.join(' · ');
               if (joined && joined !== wallTickerRef.current) {
                 wallTickerRef.current = joined;
-                setWallTicker(lines3);
+                const wt = Date.now();
+                lines3.forEach((t, ix) =>
+                  setBotTicker((b) => pushTickerItem(b, { id: `wall-${wt}-${ix}`, kind: 'wall', ts: wt, text: t }))
+                );
               }
             }
             pruneWallAges(wallAgesRef.current, activeKeys, now);
@@ -1339,7 +1357,155 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     if (x === null || y === null) return;
     pulseCanvasRef.current = { x, y, dir: top.dir, ts: Date.now() };
     drawOverlays();
-  }, [signals, drawOverlays]);
+    pushTop({
+      id: `sig-${top.id}`,
+      kind: top.dir === 'AL' ? 'signal-al' : 'signal-sat',
+      ts: Date.now(),
+      text: `⚡ SİNYAL ${top.dir} @ ${top.price}${top.grade ? ` · ${top.grade}` : ''}`
+    });
+  }, [signals, drawOverlays, pushTop]);
+
+  // ============ Sürekli haber bandı beslemeleri ============
+  // Üst: fiyat tikleri (250ms throttle, yön + önceki tike göre %)
+  useEffect(() => {
+    const now = Date.now();
+    const prev = lastTickPriceRef.current;
+    if (prev === lastPrice) return;
+    if (now - lastTickAtRef.current < 250) return;
+    lastTickAtRef.current = now;
+    lastTickPriceRef.current = lastPrice;
+    const { text, kind } = priceTickText(lastPrice, prev, symbolInfo?.pricePrecision ?? 1);
+    pushTop({ id: `tk-${now}-${lastPrice}`, kind, text, ts: now });
+  }, [lastPrice, symbolInfo, pushTop]);
+
+  // Üst: ~10sn'de bir OHLC özet kartı akışa karışır
+  useEffect(() => {
+    const t = setInterval(() => {
+      const c = lastCandleRef.current;
+      if (!c) return;
+      const chg = c.open ? ((c.close - c.open) / c.open) * 100 : 0;
+      const pr = symbolInfo?.pricePrecision ?? 1;
+      pushTop({
+        id: `sum-${Date.now()}`,
+        kind: 'info',
+        ts: Date.now(),
+        text: `${symbol} · O ${fmtNum(c.open, pr)} H ${fmtNum(c.high, pr)} L ${fmtNum(c.low, pr)} C ${fmtNum(c.close, pr)} (${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%) · V ${fmtCompact(c.volume)}`
+      });
+    }, 10000);
+    return () => clearInterval(t);
+  }, [symbol, symbolInfo, pushTop]);
+
+  // Alt: ~2sn'de bir CVD/OBI/OI metrik satırı
+  useEffect(() => {
+    const t = setInterval(() => {
+      const fs = fsSnapRef.current;
+      pushBot({
+        id: `mx-${Date.now()}`,
+        kind: 'metrics',
+        ts: Date.now(),
+        text: metricsText(fs.cvd60, fs.obi, fs.oi, fs.oiChangePct)
+      });
+    }, 2000);
+    return () => clearInterval(t);
+  }, [pushBot]);
+
+  // Alt: ~12sn'de bir işaret hatırlatması
+  useEffect(() => {
+    const t = setInterval(() => {
+      pushBot({
+        id: `hint-${Date.now()}`,
+        kind: 'info',
+        ts: Date.now(),
+        text: `işaret: ışın=duvar ≥P${settings.wallPct || 90} · ⏱=yerleşik 30s+ · banda dokun=duraklat`
+      });
+    }, 12000);
+    return () => clearInterval(t);
+  }, [settings.wallPct, pushBot]);
+
+  // Alt: likidasyon olayları
+  useEffect(() => {
+    if (!liquidations.length) return;
+    const l = [...liquidations].sort((x, y) => y.ts - x.ts)[0];
+    const key = `${l.ts}-${l.notional}`;
+    if (liqSeenRef.current === key) return;
+    liqSeenRef.current = key;
+    const isLong = l.type === 'LONG_LIQ';
+    pushBot({
+      id: `liq-${key}`,
+      kind: isLong ? 'liq-long' : 'liq-short',
+      ts: Date.now(),
+      text: `⚡ LİKİDASYON ${isLong ? 'LONG' : 'SHORT'} $${fmtCompact(l.notional)} @ ${l.price}`
+    });
+  }, [liquidations, pushBot]);
+
+  // Alt: whale/spoof/sweep/absorption/delta akış kartları
+  useEffect(() => {
+    if (!flowEvents.length) return;
+    const e = [...flowEvents].sort((x, y) => y.ts - x.ts)[0];
+    if (flowEvtSeenRef.current === e.id) return;
+    flowEvtSeenRef.current = e.id;
+    const icon =
+      e.type === 'WHALE' ? '🐋' : e.type === 'SPOOF' ? '👻' : e.type === 'SWEEP' ? '🌊' : e.type === 'ABSORPTION' ? '🛡' : e.type === 'DELTA_BURST' ? '💥' : '⚡';
+    pushBot({ id: `fe-${e.id}`, kind: 'flow', ts: Date.now(), text: `${icon} ${e.text}` });
+  }, [flowEvents, pushBot]);
+
+  // Alt: kapanan barda hacim spike'ı (3x ortalama → altın bar)
+  useEffect(() => {
+    if (candles.length < 3) return;
+    const i = candles.length - 2; // son KAPANAN bar
+    const bar = candles[i];
+    if (spikeBarRef.current === bar.time) return;
+    spikeBarRef.current = bar.time;
+    const vols = candles.map((x2) => x2.volume);
+    if (!isVolumeSpike(vols, i)) return;
+    const prev = vols.slice(Math.max(0, i - VOL_SPIKE_LOOKBACK), i);
+    const mean = prev.reduce((x2, y2) => x2 + y2, 0) / prev.length;
+    const ratio = mean > 0 ? bar.volume / mean : 0;
+    pushBot({
+      id: `spk-${bar.time}`,
+      kind: 'spike',
+      ts: Date.now(),
+      text: `🔥 HACİM SPİKE ${fmtCompact(bar.volume)} · ${ratio.toFixed(1)}x ort · C ${bar.close}`
+    });
+  }, [candles, pushBot]);
+
+  // Bant hızı (dopamin): volatilite/hacim arttıkça hızlanır — playbackRate ile,
+  // animation-duration'a dokunulmaz → hız değişiminde görüntü sıçramaz.
+  const volRatio = useMemo(() => {
+    const vols = candles.slice(-21, -1).map((x2) => x2.volume);
+    const lastV = candles.length ? candles[candles.length - 1].volume : 0;
+    const mean = vols.length ? vols.reduce((x2, y2) => x2 + y2, 0) / vols.length : 0;
+    return mean > 0 ? lastV / mean : 1;
+  }, [candles]);
+  const tickerHype = useMemo(
+    () => computeHype(flowSnapshot.rangePct, flowSnapshot.atrPct, volRatio),
+    [flowSnapshot.rangePct, flowSnapshot.atrPct, volRatio]
+  );
+  useEffect(() => {
+    for (const ref of [topTrackRef, botTrackRef]) {
+      const el = ref.current;
+      if (!el || typeof el.getAnimations !== 'function') continue;
+      for (const a of el.getAnimations()) {
+        try {
+          a.playbackRate = Math.max(0.1, tickerHype);
+        } catch {}
+      }
+    }
+  }, [tickerHype]);
+  const setTickerRunning = useCallback((run: boolean) => {
+    setTickerPaused(!run);
+    for (const ref of [topTrackRef, botTrackRef]) {
+      const el = ref.current;
+      if (!el || typeof el.getAnimations !== 'function') continue;
+      for (const a of el.getAnimations()) {
+        try {
+          if (run) a.play();
+          else a.pause();
+        } catch {}
+      }
+    }
+  }, []);
+
 
   // Dopamin 4: overlay set edilirken (yeni tespit/kullanici acilisi) glow damgasi
   useEffect(() => {
@@ -1383,6 +1549,47 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   };
 
   // Akış rozetleri (yan sütun): likidasyon + flow olayları, yeniden eskiye
+    // Bant öğeleri: tür -> renk sınıfı (canvas dışı DOM bantları)
+    const tickerKindCls = (k: TickerKind): string =>
+      k === 'up'
+        ? 'text-emerald-400'
+        : k === 'down'
+          ? 'text-rose-400'
+          : k === 'flat'
+            ? 'text-slate-400'
+            : k === 'signal-al'
+              ? 'text-emerald-300 font-bold bg-emerald-500/15 border border-emerald-500/40'
+              : k === 'signal-sat'
+                ? 'text-rose-300 font-bold bg-rose-500/15 border border-rose-500/40'
+                : k === 'liq-long'
+                  ? 'text-rose-400 font-bold'
+                  : k === 'liq-short'
+                    ? 'text-emerald-400 font-bold'
+                    : k === 'wall'
+                      ? 'text-amber-300 font-bold'
+                      : k === 'spike'
+                        ? 'text-yellow-300 font-bold'
+                        : k === 'flow'
+                          ? 'text-purple-300'
+                          : k === 'metrics'
+                            ? 'text-cyan-300'
+                            : 'text-slate-500';
+
+    const renderTickerHalf = (items: TickerItem[], hidden: boolean) => (
+      <span className="ticker-half" aria-hidden={hidden || undefined}>
+        {items.length ? (
+          items.map((it) => (
+            <span key={it.id} className={`tick-flash ${tickerKindCls(it.kind)}`}>
+              {it.text}
+            </span>
+          ))
+        ) : (
+          <span className="text-slate-600">akış bekleniyor…</span>
+        )}
+      </span>
+    );
+
+
   const flowChips = [
     ...liquidations.slice(0, 6).map((l) => ({
       k: `liq-${l.ts}-${l.notional}`,
@@ -1635,8 +1842,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     >
       {!isFullscreen && chromeBar}
 
-      {/* Bilgi bandı (canvas dışı): solda sabit OHLC/sembol/⏱/nabız + sağda kayan LİKİDİTE akışı */}
-      <div className="h-9 shrink-0 border-b border-[#1f252e] bg-[#0d1117] flex items-center gap-2 px-2 sm:px-3 overflow-hidden">
+      {/* ÜST HABER BANDI (canvas dışı, h-6): sürekli akan fiyat tikleri + sinyal kartları; sağda sabit mini küme (hover okuma + nabız + ⏱) */}
+      <div className="h-6 shrink-0 border-b border-[#1f252e] bg-[#0d1117] flex items-center gap-1.5 px-1.5">
         {isFullscreen && onToggleFullscreen && (
           <button
             onClick={onToggleFullscreen}
@@ -1693,52 +1900,46 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             )}
           </div>
         )}
-      {/* Dopamin 5 — canlı veri nabzı */}
-      <div
-      className="flex items-center gap-1.5 mr-1 select-none"
-      title={wsMessage || (wsConnected ? 'Canlı veri akışı aktif' : 'Yeniden bağlanıyor…')}
-      >
-      <span className="relative flex h-2.5 w-2.5">
-      <span
-      className={`h-2.5 w-2.5 rounded-full ${
-      wsConnected ? 'fs-live-dot' : wsMessage ? 'bg-amber-400' : 'bg-rose-500'
-      }`}
-      />
-      </span>
-      <span className={`text-[10px] font-bold hidden sm:inline ${wsConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
-      {wsConnected ? 'CANLI' : wsMessage ? 'REST' : 'OFFLINE'}
-      </span>
-      </div>
-        {(() => {
-          const b = hoverBar ?? (lastCandleRef.current
-            ? { time: lastCandleRef.current.time, o: lastCandleRef.current.open, h: lastCandleRef.current.high, l: lastCandleRef.current.low, c: lastCandleRef.current.close, vol: lastCandleRef.current.volume }
-            : null);
-          if (!b) return null;
-          const up = b.c >= b.o;
-          const chg = b.o ? ((b.c - b.o) / b.o) * 100 : 0;
-          const volTxt = b.vol != null ? new Intl.NumberFormat('tr-TR', { notation: 'compact' }).format(b.vol) : '—';
-          return (
-            <span className="flex items-center gap-2 shrink-0 text-[10px] font-mono text-slate-500">
-              <span>{new Date(b.time * 1000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
-              <span>O <span className="text-slate-300">{b.o}</span></span>
-              <span>H <span className="text-slate-300">{b.h}</span></span>
-              <span>L <span className="text-slate-300">{b.l}</span></span>
-              <span className={up ? 'text-emerald-400' : 'text-rose-400'}>C {b.c} ({up ? '+' : ''}{chg.toFixed(2)}%)</span>
-              <span>V <span className="text-slate-300">{volTxt}</span></span>
-            </span>
-          );
-        })()}
+        <div
+          className={`ticker ${tickerPaused ? 'paused' : ''}`}
+          onPointerDown={() => setTickerRunning(false)}
+          onPointerUp={() => setTickerRunning(true)}
+          onPointerCancel={() => setTickerRunning(true)}
+          onPointerLeave={() => setTickerRunning(true)}
+          title="Banda dokun = duraklat, bırak = kaldığı hızdan devam"
+        >
+          <div ref={topTrackRef} className="ticker-track text-[10px] font-mono">
+            {renderTickerHalf(topTicker, false)}
+            {renderTickerHalf(topTicker, true)}
+          </div>
+        </div>
+        {hoverBar && (
+          <span className="shrink-0 text-[10px] font-mono text-slate-500 hidden sm:inline whitespace-nowrap">
+            H <span className="text-slate-300">{hoverBar.h}</span> L <span className="text-slate-300">{hoverBar.l}</span>{' '}
+            <span className={hoverBar.c >= hoverBar.o ? 'text-emerald-400' : 'text-rose-400'}>C {hoverBar.c}</span>
+          </span>
+        )}
+        {/* Dopamin 5 — canlı veri nabzı */}
+        <div
+          className="flex items-center gap-1.5 shrink-0 select-none"
+          title={wsMessage || (wsConnected ? 'Canlı veri akışı aktif' : 'Yeniden bağlanıyor…')}
+        >
+          <span className="relative flex h-2.5 w-2.5">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                wsConnected ? 'fs-live-dot' : wsMessage ? 'bg-amber-400' : 'bg-rose-500'
+              }`}
+            />
+          </span>
+          <span className={`text-[10px] font-bold hidden md:inline ${wsConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
+            {wsConnected ? 'CANLI' : wsMessage ? 'REST' : 'OFFLINE'}
+          </span>
+        </div>
         {countdown !== null && (
           <span className={`shrink-0 text-[10px] font-mono font-bold ${countdown <= 10 ? 'text-amber-400' : 'text-slate-400'}`}>
             ⏱ {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
           </span>
         )}
-        <div className="flex-1 min-w-0 overflow-hidden" aria-hidden>
-          <div className="fs-marquee text-[10px] font-mono text-slate-500">
-            <span>LİKİDİTE <b className="text-emerald-400">▲ BID</b> · <b className="text-rose-400">▼ ASK</b> · ışın=duvar ≥ P{settings.wallPct || 90} · ⏱ yerleşik 30s+</span>
-            <span>LİKİDİTE <b className="text-emerald-400">▲ BID</b> · <b className="text-rose-400">▼ ASK</b> · ışın=duvar ≥ P{settings.wallPct || 90} · ⏱ yerleşik 30s+</span>
-          </div>
-        </div>
       </div>
 
       <div className="flex-1 min-h-0 flex flex-row">
@@ -1767,20 +1968,20 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         </div>
       </div>
 
-      {/* Duvar bandı (canvas dışı): akan duvar tekeri — $ etiketleri canvas'ta değil bantta */}
-      <div className="h-7 shrink-0 border-t border-[#1f252e] bg-[#0d1117] flex items-center overflow-hidden px-2" aria-hidden>
-        <div className="fs-marquee text-[10px] font-mono text-slate-400">
-          {wallTicker.length ? (
-            <>
-              <span>{wallTicker.join('  ·  ')}</span>
-              <span>{wallTicker.join('  ·  ')}</span>
-            </>
-          ) : (
-            <>
-              <span>DUVAR taraması bekleniyor…</span>
-              <span>DUVAR taraması bekleniyor…</span>
-            </>
-          )}
+      {/* ALT HABER BANDI (canvas dışı, h-6): CVD/OBI/OI + duvar + spike/likidasyon akışı — durmadan akar, dokun = duraklat */}
+      <div className="h-6 shrink-0 border-t border-[#1f252e] bg-[#0d1117] flex">
+        <div
+          className={`ticker ${tickerPaused ? 'paused' : ''}`}
+          onPointerDown={() => setTickerRunning(false)}
+          onPointerUp={() => setTickerRunning(true)}
+          onPointerCancel={() => setTickerRunning(true)}
+          onPointerLeave={() => setTickerRunning(true)}
+          title="Banda dokun = duraklat, bırak = kaldığı hızdan devam"
+        >
+          <div ref={botTrackRef} className="ticker-track text-[10px] font-mono">
+            {renderTickerHalf(botTicker, false)}
+            {renderTickerHalf(botTicker, true)}
+          </div>
         </div>
       </div>
     </div>
