@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Çok dar ekran breakpoint'i (xs) — sm altı telefonlarda granüler gizleme
+   (örn. FlowMetricsPanel OI % eki, sayfa düğme metinleri) */
+@theme {
+  --breakpoint-xs: 425px;
+}
+
 @layer base {
   :root {
     --sat: env(safe-area-inset-top, 0px);

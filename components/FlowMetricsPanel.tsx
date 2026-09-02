@@ -222,7 +222,7 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
       <div className="flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
         <span className="text-slate-500 font-bold">OI:</span>
         <span className="font-bold text-slate-200">{flow.oi ? compact(flow.oi) : '---'}</span>
-        <span className={`text-[10px] ${flow.oiChangePct > 0 ? 'text-emerald-400' : flow.oiChangePct < 0 ? 'text-rose-400' : 'text-slate-500'}`}>
+        <span className={`hidden xs:inline text-[10px] ${flow.oiChangePct > 0 ? 'text-emerald-400' : flow.oiChangePct < 0 ? 'text-rose-400' : 'text-slate-500'}`}>
           ({flow.oiChangePct > 0 ? '+' : ''}{flow.oiChangePct.toFixed(1)}%)
         </span>
       </div>

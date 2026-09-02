@@ -586,10 +586,10 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       });
     }
 
-    // Whale / Flow Events (WHALE, SWEEP, DELTA_BURST, ABSORPTION, SPOOF)
+    // Whale / Flow Events (WHALE, SWEEP, DELTA_BURST, ABSORPTION) + SPOOF (birleşik marker)
     if (settings.whaleAlerts) {
       flowEvents
-        .filter((e) => e.type === 'WHALE' || e.type === 'SWEEP' || e.type === 'DELTA_BURST' || e.type === 'ABSORPTION' || e.type === 'SPOOF')
+        .filter((e) => e.type === 'WHALE' || e.type === 'SWEEP' || e.type === 'DELTA_BURST' || e.type === 'ABSORPTION')
         .slice(-15)
         .forEach((w) => {
           const isBuy = w.side === 'buy';
@@ -597,24 +597,48 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             time: snapToBarTime(w.ts, tfSec) as Time,
             position: isBuy ? 'belowBar' : 'aboveBar',
             color:
-              w.type === 'SPOOF'
-                ? '#ec4899'
-                : w.type === 'ABSORPTION'
-                  ? '#06b6d4'
-                  : w.type === 'DELTA_BURST'
-                    ? '#a855f7'
-                    : isBuy
-                      ? '#10b981'
-                      : '#f59e0b',
-            shape: w.type === 'SPOOF' ? 'circle' : 'square',
+              w.type === 'ABSORPTION'
+                ? '#06b6d4'
+                : w.type === 'DELTA_BURST'
+                  ? '#a855f7'
+                  : isBuy
+                    ? '#10b981'
+                    : '#f59e0b',
+            shape: 'square',
             text:
-              w.type === 'SPOOF'
-                ? '👻SPOOF'
-                : w.type === 'ABSORPTION'
-                  ? '🛡️ABSORB'
-                  : w.type === 'DELTA_BURST'
-                    ? '💥BURST'
-                    : `🐋${w.type}`
+              w.type === 'ABSORPTION'
+                ? '🛡️ABSORB'
+                : w.type === 'DELTA_BURST'
+                  ? '💥BURST'
+                  : `🐋${w.type}`
+          });
+        });
+
+      // SPOOF spam fix: ayni bara dusen eventler tek marker'da birlesir (xN sayaci),
+      // 3 barlik pencerede en fazla 1 marker, metin sadece '👻' ('SPOOF' kelimesi yok).
+      const spoofByBar = new Map<number, { buys: number; sells: number }>();
+      flowEvents
+        .filter((e) => e.type === 'SPOOF')
+        .forEach((e) => {
+          const bt = snapToBarTime(e.ts, tfSec);
+          const cur = spoofByBar.get(bt) || { buys: 0, sells: 0 };
+          if (e.side === 'buy') cur.buys++;
+          else cur.sells++;
+          spoofByBar.set(bt, cur);
+        });
+      let lastKeptSpoofBar = Infinity;
+      [...spoofByBar.entries()]
+        .sort((a, b) => b[0] - a[0]) // yeni -> eski
+        .forEach(([bt, agg]) => {
+          if (lastKeptSpoofBar - bt < 3 * tfSec) return; // son 3 bar icinde maks 1 SPOOF marker
+          lastKeptSpoofBar = bt;
+          const n = agg.buys + agg.sells;
+          markers.push({
+            time: bt as Time,
+            position: agg.sells >= agg.buys ? 'aboveBar' : 'belowBar',
+            color: '#ec4899',
+            shape: 'circle',
+            text: n > 1 ? `👻×${n}` : '👻'
           });
         });
     }
@@ -897,6 +921,27 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             if (cur.notional > maxNotional) maxNotional = cur.notional;
           });
 
+          // Wall tag <-> native marker cakisma fix'i: marker'li barlarin piksel konumlari;
+          // etiket bolgesine (isimanda yakin) marker duserse etiket 12px yukari kayar.
+          const markerPx: { x: number; y: number }[] = [];
+          {
+            const tfSecL = intervalToSeconds(interval);
+            const candleByTime = new Map(candles.map((c) => [c.time, c] as const));
+            const mtimes: number[] = [];
+            if (settings.showLiq) liquidations.slice(-20).forEach((l) => mtimes.push(snapToBarTime(l.ts, tfSecL)));
+            if (settings.whaleAlerts) flowEvents.slice(-15).forEach((e) => mtimes.push(snapToBarTime(e.ts, tfSecL)));
+            signals.forEach((s) => mtimes.push(s.ts));
+            const tsc = chart.timeScale();
+            for (const t of mtimes) {
+              const x = tsc.timeToCoordinate(t as Time);
+              const c = candleByTime.get(t);
+              const y = c ? series.priceToCoordinate(c.close) : null;
+              if (x !== null && y !== null) markerPx.push({ x, y });
+            }
+          }
+          const wallTagShift = (rayStart: number, slotY: number) =>
+            markerPx.some((m) => m.x >= rayStart - 14 && Math.abs(m.y - slotY) < 24) ? 12 : 0;
+
           // Draw Asks (Red)
           askSlots.forEach(({ notional, price }, slotY) => {
             const barLen = Math.min(ladderWidth, (notional / maxNotional) * ladderWidth);
@@ -931,7 +976,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               ctx.font = '11px monospace';
               ctx.fillStyle = 'rgba(239, 83, 80, 0.95)';
               const tag = `${isEstablished ? '⏱ ' : ''}▼$${(notional / 1000).toFixed(0)}k`;
-              ctx.fillText(tag, rayStart + 5, slotY - 3);
+              ctx.fillText(tag, rayStart + 5, slotY - 3 - wallTagShift(rayStart, slotY));
             } else {
               wallAgesRef.current.delete(slotKey);
             }
@@ -971,7 +1016,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               ctx.font = '11px monospace';
               ctx.fillStyle = 'rgba(38, 166, 154, 0.95)';
               const tag = `${isEstablished ? '⏱ ' : ''}▲$${(notional / 1000).toFixed(0)}k`;
-              ctx.fillText(tag, rayStart + 5, slotY - 3);
+              ctx.fillText(tag, rayStart + 5, slotY - 3 - wallTagShift(rayStart, slotY));
             } else {
               wallAgesRef.current.delete(slotKey);
             }
@@ -1064,7 +1109,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         }
       }
     });
-  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval]);
+  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval, candles, flowEvents, liquidations]);
 
   // Clean up RAF on unmount
   useEffect(() => {
@@ -1343,7 +1388,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
         {/* Likidite Overlay Legend */}
         {legendOpen && (
-          <div className="absolute bottom-2 left-2 z-30 bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 backdrop-blur-sm text-[10px] font-mono text-slate-400 flex items-center gap-2 select-none">
+          <div className={`absolute left-2 z-30 bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 backdrop-blur-sm text-[10px] font-mono text-slate-400 flex items-center gap-2 select-none ${isFullscreen ? 'top-12' : 'top-2'}`}>
             <span className="text-slate-300 font-bold">LİKİDİTE</span>
             <span>
               <span className="text-emerald-400 font-bold">▲ BID</span>
