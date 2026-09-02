@@ -39,6 +39,7 @@ import { bollingerBands, macd, psar, rsi, sma, vwap } from '@/lib/indicators';
 import { intervalToSeconds } from '@/lib/pattern-engine';
 import { useAndroidBack } from '@/hooks/use-android-back';
 import { buzz } from '@/lib/haptics';
+import { volumeBarColor } from '@/lib/volume-spike';
 import {
   mergeWalls,
   nonzeroMax,
@@ -75,6 +76,9 @@ interface ChartTerminalProps {
   onUpdateSetting?: (key: keyof AppSettings, val: any) => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /** Bağlantı durumu (canlı nabız — dopamin 5) */
+  wsConnected?: boolean;
+  wsMessage?: string;
   /** Mini sembol grid'i aç/kapa (page.tsx state'i) */
   miniOn?: boolean;
   onToggleMini?: () => void;
@@ -129,6 +133,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   onUpdateSetting,
   isFullscreen = false,
   onToggleFullscreen,
+  wsConnected = false,
+  wsMessage = '',
   miniOn,
   onToggleMini,
 }) => {
@@ -157,6 +163,10 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const lastBarTimeRef = useRef<number | null>(null);
   const overlayRafRef = useRef<number | null>(null);
   const wallAgesRef = useRef<Map<string, WallAgeRecord>>(new Map());
+  // Dopamin 2/4: fiyat flaşı + desen bandı durumları (drawOverlays içinde)
+  const priceFlashRef = useRef<{ price: number; ts: number; dir: 1 | -1 }>({ price: 0, ts: 0, dir: 1 });
+  const patternGlowRef = useRef<{ key: string; ts: number }>({ key: '', ts: 0 });
+  const patternGlowRedrawRef = useRef(false);
 
   // Overlay Canvases
   const heatmapCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -646,7 +656,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       const lastCandle = candleData[candleData.length - 1];
       candleSeriesRef.current.update(lastCandle);
       if (volSeriesRef.current && settings.showVol) {
-        const volColor = last.close >= last.open ? 'rgba(38, 166, 154, 0.4)' : 'rgba(239, 83, 80, 0.4)';
+        // Dopamin 3: 3x hacim spike'i altin (lib/volume-spike)
+        const volsLive = candles.map((cc) => cc.volume);
+        const volColor = volumeBarColor(volsLive, volsLive.length - 1, last.close >= last.open);
         volSeriesRef.current.update({ time: last.time as Time, value: last.volume, color: volColor });
       }
     } else {
@@ -667,11 +679,12 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       } catch {}
 
       if (volSeriesRef.current) {
+        const volsBatch = candles.map((c) => c.volume);
         const volData: HistogramData<Time>[] = settings.showVol
-          ? candles.map((c) => ({
+          ? candles.map((c, i) => ({
               time: c.time as Time,
               value: c.volume,
-              color: c.close >= c.open ? 'rgba(38, 166, 154, 0.4)' : 'rgba(239, 83, 80, 0.4)'
+              color: volumeBarColor(volsBatch, i, c.close >= c.open) // Dopamin 3: spike -> altin
             }))
           : [];
         volSeriesRef.current.setData(volData);
@@ -1083,11 +1096,12 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       }
 
       // 2. Draw DOM Ladder & Liquidity Walls with Compact Design (Fix H3, H4, H5)
-      if (domOverlayCanvasRef.current && settings.showLadder) {
+      if (domOverlayCanvasRef.current) {
         const cv = domOverlayCanvasRef.current;
         const ctx = cv.getContext('2d');
         if (ctx) {
           ctx.clearRect(0, 0, width, height);
+          if (settings.showLadder) {
 
           // Dinamik fiyat ekseni genisligi (sembol hassasiyetine gore; sabit 58px yerine)
           const axisWidth = Math.max(58, chart.priceScale('right').width?.() ?? 58);
@@ -1341,11 +1355,86 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                 ctx.restore();
               }
             });
+          } // MFE-if kapanisi
+          } // showLadder guard kapanisi
+
+          // Dopamin 2 — son fiyat flaşı (0.3s): anlamlı oynama (>=1bp) olduğunda fiyat
+          // çizgisi yönlü renkte parlar; alpha zamanla söner, sonulme karesi için redraw planlanır.
+          {
+            const lastC = candles[candles.length - 1];
+            if (lastC) {
+              const pf = priceFlashRef.current;
+              const nowMs = Date.now();
+              if (lastC.close !== pf.price) {
+                if (!pf.price || Math.abs(lastC.close - pf.price) / pf.price >= 0.0001) {
+                  priceFlashRef.current = {
+                    price: lastC.close,
+                    ts: nowMs,
+                    dir: lastC.close > (pf.price || lastC.close) ? 1 : -1
+                  };
+                  window.setTimeout(() => drawOverlays(), 340);
+                } else {
+                  priceFlashRef.current = { ...pf, price: lastC.close }; // ufak oynama: flaş yenilenmez
+                }
+              }
+              const fl = priceFlashRef.current;
+              const age = nowMs - fl.ts;
+              if (age < 300) {
+                const yFlash = series.priceToCoordinate(fl.price);
+                if (yFlash !== null) {
+                  const k = 1 - age / 300;
+                  ctx.save();
+                  ctx.strokeStyle =
+                    fl.dir >= 0 ? `rgba(34, 197, 94, ${(0.6 * k).toFixed(3)})` : `rgba(239, 68, 68, ${(0.6 * k).toFixed(3)})`;
+                  ctx.lineWidth = 1.6;
+                  ctx.shadowColor = fl.dir >= 0 ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)';
+                  ctx.shadowBlur = 10 * k;
+                  ctx.beginPath();
+                  ctx.moveTo(0, yFlash);
+                  ctx.lineTo(width, yFlash);
+                  ctx.stroke();
+                  ctx.restore();
+                }
+              }
+            }
+          }
+
+          // Dopamin 4 — desen buluntu bandı: overlay aktifken giriş barından 20 barlık
+          // sonuç penceresine yumuşak yeşil bant; yeni tespitte 1.2sn parlaklayarak gelir.
+          if (patternOverlay && patternOverlay.events.length) {
+            const tfSecP = intervalToSeconds(interval);
+            const tscP = chart.timeScale();
+            patternOverlay.events.slice(-3).forEach((ev) => {
+              if (ev.timeframe !== interval) return;
+              const t0 = Math.floor(ev.timestamp / 1000);
+              const x1 = tscP.timeToCoordinate(t0 as Time);
+              if (x1 === null) return;
+              const x2 = tscP.timeToCoordinate((t0 + 20 * tfSecP) as Time) ?? x1 + 140;
+              const gKey = `${ev.eventKey ?? t0}`;
+              const glow = patternGlowRef.current.key === gKey ? Math.max(0, 1 - (Date.now() - patternGlowRef.current.ts) / 1200) : 0;
+              ctx.fillStyle = `rgba(34, 197, 94, ${(0.08 + 0.18 * glow).toFixed(3)})`;
+              ctx.fillRect(x1, 0, Math.max(20, x2 - x1), height);
+              if (glow > 0 && !patternGlowRedrawRef.current) {
+                patternGlowRedrawRef.current = true;
+                window.setTimeout(() => {
+                  patternGlowRedrawRef.current = false;
+                  drawOverlays();
+                }, 1250);
+              }
+            });
           }
         }
       }
     });
-  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval, symbol, symbolInfo, candles, flowEvents, liquidations, isFullscreen]);
+  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval, symbol, symbolInfo, candles, flowEvents, liquidations, isFullscreen, patternOverlay]);
+
+  // Dopamin 4: overlay set edilirken (yeni tespit/kullanici acilisi) glow damgasi
+  useEffect(() => {
+    if (!patternOverlay?.events.length) return;
+    const ev = patternOverlay.events[patternOverlay.events.length - 1];
+    patternGlowRef.current = { key: `${ev.eventKey ?? Math.floor(ev.timestamp / 1000)}`, ts: Date.now() };
+    drawOverlays();
+  }, [patternOverlay, drawOverlays]);
 
   // Clean up RAF on unmount
   useEffect(() => {
@@ -1406,6 +1495,23 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                 {tf}
               </button>
             ))}
+          </div>
+
+          {/* Dopamin 5 — canlı veri nabzı */}
+          <div
+            className="flex items-center gap-1.5 mr-1 select-none"
+            title={wsMessage || (wsConnected ? 'Canlı veri akışı aktif' : 'Yeniden bağlanıyor…')}
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  wsConnected ? 'fs-live-dot' : wsMessage ? 'bg-amber-400' : 'bg-rose-500'
+                }`}
+              />
+            </span>
+            <span className={`text-[10px] font-bold hidden sm:inline ${wsConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
+              {wsConnected ? 'CANLI' : wsMessage ? 'REST' : 'OFFLINE'}
+            </span>
           </div>
 
           {/* Mini Symbol Grid Toggle */}

@@ -1056,7 +1056,9 @@ export default function Home() {
                 onUpdateSetting={handleUpdateSingleSetting}
                 isFullscreen={isFullscreen}
                 onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
-                miniOn={miniOn}
+                wsConnected={wsConnected}
+          wsMessage={wsMessage}
+          miniOn={miniOn}
                 onToggleMini={() => setMiniOn((v) => !v)}
               />
             </div>
