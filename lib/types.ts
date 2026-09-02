@@ -95,6 +95,7 @@ export interface AppSettings {
   cascadePct: number;
   showLadder: boolean;
   showHeatmap: boolean;
+  showMfeMae: boolean;
   whaleAlerts: boolean;
   haptics: boolean;
   whaleMin: number;

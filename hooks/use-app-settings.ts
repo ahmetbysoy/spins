@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cascadePct: 0.8,
   showLadder: true,
   showHeatmap: true,
+  showMfeMae: true,
   whaleAlerts: true,
   haptics: true,
   whaleMin: 300000,

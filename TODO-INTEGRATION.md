@@ -162,6 +162,10 @@ Kaynak: `uploads/PREDATOR.html` (analiz: `uploads/PREDATOR-yapisal-analiz.md`). 
 3. **placeLabelY koordinatoru** (ChartTerminal): 7x12px merdiven, blokeli bolgeler (ust UI/mid/alt + native marker x-bandi), yer yoksa etiket cizilmez; maks 10 etiket, notional x yas sirali, saga hizali pill.
 4. **Sinyal oz-skor karti** (`lib/signal-outcomes.ts`): 3/5/7/15dk ✓/✗ chip'leri, mum kapandikca cozumlenir, signalLog'a kalici.
 
+## BACKLOG
+- **Renk körlüğü modu** (orta öncelik): tüm canvas çizimleri (mum up/down, volume, heatmap, ladder, duvar ışınları, MFE/MAE) TEK renk haritasından alsın (`lib/palette.ts`); alternatif palet turuncu `#f97316` / teal `#14b8a6` + mevcut ▲/▼ şekil ayırt edicileri. Ayar: `settings.colorblind` + ayar paneli satırı. Kapsam: ChartTerminal createChart(upColor/downColor) + volume + 4 canvas bloğu + FlowMetricsPanel/OrderFlowLog rozetleri — büyük iş, bilinçli ertelendi.
+- **Telegram bridge** (eski bekleyen).
+
 ### GENEL DOĞRULAMA (her görev sonrası)
 ```bash
 npx vitest run        # tüm testler geçmeli (şu an 90)

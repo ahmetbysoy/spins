@@ -852,6 +852,12 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               // Fix H1: frame.t is already in seconds, no need to divide by 1000
               const x = timeScale.timeToCoordinate(frame.t as Time);
               if (x === null || x < 0 || x > width) return;
+              // Lader seridi cakismasi: heatmap kareleri fiyat ekseni + DOM ladder
+              // alanina dusmesin — canli duvar ile gecmis isi noktalari ayrissin.
+              if (settings.showLadder) {
+                const axisWHm = Math.max(58, chart.priceScale('right').width?.() ?? 58);
+                if (x > width - axisWHm - 52) return;
+              }
               const slotX = Math.round(x / 4) * 4;
 
               frame.bins.forEach((bin) => {
@@ -1087,7 +1093,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           }
 
           // 3. Draw Historical MFE / MAE Trajectory Vectors (F2-3)
-          if (signals.length > 0 && activePatternStats && activePatternStats.avgMfe20 > 0) {
+          if (settings.showMfeMae && signals.length > 0 && activePatternStats && activePatternStats.avgMfe20 > 0) {
             const timeScale = chart.timeScale();
             const recentSignals = signals.slice(0, 8);
 
@@ -1120,14 +1126,14 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
                 // MFE Trajectory Vector (Emerald)
                 if (mfeY !== null) {
-                  ctx.strokeStyle = 'rgba(16, 185, 129, 0.75)';
+                  ctx.strokeStyle = 'rgba(16, 185, 129, 0.5)';
                   ctx.lineWidth = 1.2;
                   ctx.beginPath();
                   ctx.moveTo(startX, startY);
                   ctx.lineTo(endX, mfeY);
                   ctx.stroke();
 
-                  ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+                  ctx.fillStyle = 'rgba(16, 185, 129, 0.7)';
                   ctx.beginPath();
                   ctx.arc(endX, mfeY, 2.5, 0, 2 * Math.PI);
                   ctx.fill();
@@ -1135,14 +1141,14 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
                 // MAE Trajectory Vector (Rose)
                 if (maeY !== null) {
-                  ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
+                  ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
                   ctx.lineWidth = 1;
                   ctx.beginPath();
                   ctx.moveTo(startX, startY);
                   ctx.lineTo(endX, maeY);
                   ctx.stroke();
 
-                  ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
+                  ctx.fillStyle = 'rgba(239, 68, 68, 0.6)';
                   ctx.beginPath();
                   ctx.arc(endX, maeY, 2, 0, 2 * Math.PI);
                   ctx.fill();
@@ -1327,6 +1333,20 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             aria-pressed={settings.showLadder}
           >
             DOM LADDER
+          </button>
+
+          <button
+            onClick={() => toggleInd('showMfeMae')}
+            className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
+              settings.showMfeMae
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold'
+                : 'text-slate-500 border-[#22272e] hover:text-slate-300'
+            }`}
+            title="MFE/MAE Yörünge Vektörleri"
+            aria-label="MFE/MAE Yörünge Vektörleri"
+            aria-pressed={settings.showMfeMae}
+          >
+            MFE/MAE
           </button>
 
           <button
