@@ -3,7 +3,7 @@
   "appName": "Spins",
   "webDir": "public",
   "server": {
-    "url": "https://spins.vercel.app",
+    "url": "https://ahmetbysoy-spins.vercel.app",
     "cleartext": false,
     "androidScheme": "https",
     "errorPath": "offline.html"

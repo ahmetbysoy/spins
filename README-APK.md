@@ -1,7 +1,7 @@
 # Spins — Android APK
 
 Uygulama, **Capacitor** kabuğudur: `com.ahmetbysoy.spins`, açılışta canlı siteyi
-(`https://spins.vercel.app`) tam ekran WebView'da açar. Ayrık native paket yoktur;
+(`https://ahmetbysoy-spins.vercel.app`) tam ekran WebView'da açar. Ayrık native paket yoktur;
 her deploy'da site güncellenir, APK yeniden build gerekmez.
 
 ## Otomatik build (GitHub Actions → `.github/workflows/apk.yml`)
