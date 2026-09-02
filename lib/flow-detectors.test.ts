@@ -129,10 +129,17 @@ describe('collectWalls & detectSpoofRemovals', () => {
   it('hâlâ ayakta olan veya yaşlı/ufak duvarlar spoof değil', () => {
     const prev = new Map<number, WallInfo>([
       [100, { notional: 500_000, ts: now - 1000, side: 'B' }],
-      [102, { notional: 500_000, ts: now - 9000, side: 'A' }], // çok yaşlı
+      [102, { notional: 500_000, ts: now - 9000, side: 'A' }], // çok yaşlı (>8s)
       [104, { notional: 50_000, ts: now - 1000, side: 'A' }] // ufak
     ]);
     const cur = new Map<number, WallInfo>([[100, { notional: 500_000, ts: now, side: 'B' }]]);
     expect(detectSpoofRemovals(prev, cur, now, WHALE)).toHaveLength(0);
+  });
+
+  it('8sn pencere sınırı: 7sn iptal spoof, 9sn değil', () => {
+    const mk = (age: number) =>
+      new Map<number, WallInfo>([[100, { notional: 500_000, ts: now - age, side: 'B' }]]);
+    expect(detectSpoofRemovals(mk(7000), new Map(), now, WHALE)).toHaveLength(1);
+    expect(detectSpoofRemovals(mk(9000), new Map(), now, WHALE)).toHaveLength(0);
   });
 });

@@ -30,6 +30,7 @@ import {
   SignalLogEntry,
   SymbolInfo,
   AppView,
+  HeatmapBin,
   Ticker24h,
   TradeEvent
 } from '@/lib/types';
@@ -44,6 +45,15 @@ import {
 import { generateCommentary } from '@/lib/commentary';
 import { fetchAICommentary, buildFlowBrief, type AICommentaryContext } from '@/lib/ai-commentary';
 import { computeFlowSnapshotCore } from '@/lib/flow-snapshot';
+import {
+  dataFreshnessRule,
+  fadeObiRule,
+  fundingCrowdedRule,
+  liqClusterRule,
+  reverseLiqRatioRule,
+  whaleThreshold,
+  type RuleResult
+} from '@/lib/scoring-rules';
 import {
   collectWalls,
   detectAbsorption,
@@ -73,6 +83,8 @@ import {
   patternRecomputeStats,
   patternId,
   patternName,
+  patternRecentExists,
+  patternCompleteAllOpenEvents,
   dbAdd,
   dbPut,
   dbDelete,
@@ -214,6 +226,10 @@ export default function Home() {
   const latestOiRef = useRef<number | null>(null);
   const bidsBookRef = useRef<Map<number, number>>(bidsBook);
   const asksBookRef = useRef<Map<number, number>>(asksBook);
+  // Görev C/D: veri tazeliği (depth/mark) + sembol tick boyutu (heatmap bucketing)
+  const lastDepthTsRef = useRef<number>(0);
+  const lastMarkTsRef = useRef<number>(0);
+  const tickSizeRef = useRef<number>(0);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -231,6 +247,11 @@ export default function Home() {
     bidsBookRef.current = bidsBook;
     asksBookRef.current = asksBook;
   }, [bidsBook, asksBook]);
+
+  useEffect(() => {
+    const si = symbolInfos.find((x) => x.symbol === symbol);
+    tickSizeRef.current = si && si.tickSize > 0 ? si.tickSize : 0;
+  }, [symbolInfos, symbol]);
 
   const clientRef = useRef<BinanceStreamClient | null>(null);
   const tradesRef = useRef<TradeEvent[]>([]);
@@ -337,6 +358,8 @@ export default function Home() {
   // Initialize DB and load saved preferences on Mount (safe from SSR hydration mismatch)
   useEffect(() => {
     initPatternDB();
+    // Görev E: bayat pending/tracking event'leri açılışta settle et (fire-and-forget)
+    patternCompleteAllOpenEvents().catch(() => {});
     const timer = setTimeout(() => {
       try {
         const savedSymbol = localStorage.getItem('fs_symbol');
@@ -699,7 +722,7 @@ export default function Home() {
       markPrice,
       nextFunding: nextFundingTime,
       cascadePct: currSettings.cascadePct || 0.8,
-      whaleMin: currSettings.whaleMin || 300000,
+      whaleMin: whaleThreshold(currSettings.whaleMin),
       liqMin: currSettings.liqMin || 50000
     });
   }, [fundingRate, markPrice, nextFundingTime, openInterest]);
@@ -721,6 +744,14 @@ export default function Home() {
       const snap = computeFlowSnapshot();
       let score = 55;
       const reasons: string[] = [];
+
+      // Görev C: saf kural modülünden gelen sonuçları uygular (lib/scoring-rules.ts)
+      const applyRule = (r: RuleResult) => {
+        if (r.reason) {
+          score += r.delta;
+          reasons.push(r.reason);
+        }
+      };
 
       if (snap.notional60 === 0) {
         score -= 6;
@@ -773,6 +804,8 @@ export default function Home() {
             score += 10;
             reasons.push('OBI alış tarafına döndü; mean-reversion AL destekleniyor.');
           }
+          // Görev C: fade-AL erken çıkış penaltısı (OBI hâlâ ask baskılı)
+          applyRule(fadeObiRule(snap.cascadeDown, snap.obi));
         } else {
           if (snap.cvdBias > 0.08) {
             score += 10;
@@ -809,25 +842,11 @@ export default function Home() {
         reasons.push('Fiyat aralığı açık; kurgu nefes alıyor.');
       }
 
-      // Liquidation Clusters
-      if (dir === 'SAT' && snap.longLiq60 >= (currSettings.liqMin || 50000)) {
-        score += 12;
-        reasons.push(`Likidasyon cascade: $${(snap.longLiq60 / 1000).toFixed(0)}k long liq tetiklendi.`);
-      }
-      if (dir === 'AL' && snap.shortLiq60 >= (currSettings.liqMin || 50000)) {
-        score += 12;
-        reasons.push(`Short squeeze cascade: $${(snap.shortLiq60 / 1000).toFixed(0)}k short liq tetiklendi.`);
-      }
+      // Liquidation Clusters (Görev C: bonus yalnızca taker spike ile — Stage-4 paritesi)
+      applyRule(liqClusterRule(dir, snap, currSettings.liqMin || 50000));
 
-      // Reverse Liquidation Flow Penalty (F1-9)
-      if (dir === 'SAT' && snap.shortLiq60 >= (currSettings.liqMin || 50000) * 0.75) {
-        score -= 5;
-        reasons.push('Ters likidasyon akışı (-5p): Karşı yönlü short likidasyonları satış baskısını kesebilir.');
-      }
-      if (dir === 'AL' && snap.longLiq60 >= (currSettings.liqMin || 50000) * 0.75) {
-        score -= 5;
-        reasons.push('Ters likidasyon akışı (-5p): Karşı yönlü long likidasyonları alış ivmesini kesebilir.');
-      }
+      // Reverse Liquidation Flow (Görev C: oran bazlı 1.5x — Stage-4 paritesi)
+      applyRule(reverseLiqRatioRule(dir, snap, currSettings.liqMin || 50000));
 
       // Absorption & Flow Detector Confluence
       const recentAbsorption = flowEvents.find((e) => e.type === 'ABSORPTION' && Date.now() - e.ts < 20000);
@@ -850,7 +869,7 @@ export default function Home() {
       if (snap.oiChangePct < -0.25 && snap.takerSpike) {
         score += dir === 'SAT' ? 8 : 4;
         reasons.push(`OI %${snap.oiChangePct.toFixed(2)} boşaldı + taker spike.`);
-      } else if (snap.oiChangePct > 0.35) {
+      } else if (snap.oiChangePct > 0.25) {
         const alignedWithCvd = (dir === 'AL' && snap.cvdBias > -0.05) || (dir === 'SAT' && snap.cvdBias < 0.05);
         if (alignedWithCvd) {
           score += 4;
@@ -864,12 +883,9 @@ export default function Home() {
         reasons.push('Açık Pozisyon azalması (-2p): Pozisyon kapanışları trendin gücünü zayıflatıyor.');
       }
 
-      // Data Freshness Check (F1-9)
-      const lastTrade = tradesRef.current[tradesRef.current.length - 1];
-      if (lastTrade && Date.now() - lastTrade.ts > 15000) {
-        score -= 8;
-        reasons.push('Veri tazeliği uyarısı (-8p): Son 15 saniyede akış gecikmesi var.');
-      }
+      // Data Freshness Check (Görev C: trade + depth + mark'un en yenisi)
+      const lastTradeTs = tradesRef.current[tradesRef.current.length - 1]?.ts || 0;
+      applyRule(dataFreshnessRule(Math.max(lastTradeTs, lastDepthTsRef.current, lastMarkTsRef.current)));
 
       // Funding Rate Bias
       if (snap.funding !== null) {
@@ -881,6 +897,8 @@ export default function Home() {
           reasons.push(`Aşırı negatif funding (%${(snap.funding * 100).toFixed(4)}); short squeeze/AL lehine.`);
         }
       }
+      // Görev C: funding "kalabalık" penaltısı (sinyal yönündeki yığılma aleyhine)
+      applyRule(fundingCrowdedRule(dir, snap.funding));
 
       // Pattern Pool Intelligence Confluence (F2-1: Wilson Lower Bound & MFE/MAE)
       if (patternStats && patternStats.n >= 4) {
@@ -1098,7 +1116,15 @@ export default function Home() {
               const globalKey = `${interval}:${patKey}`;
               const coinKey = `${symbol}:${interval}:${patKey}`;
 
-              if (!isDuplicate) {
+              // Görev E: DB seviyesinde ±3 mum dedupe (çapraz oturum koruması)
+              const recentInDb = await patternRecentExists(
+                symbol,
+                interval,
+                patKey,
+                cs[i].time * 1000
+              ).catch(() => false);
+
+              if (!isDuplicate && !recentInDb) {
                 lastRecordedEventTimeRef.current = cs[i].time;
                 lastRecordedPatIdRef.current = patKey;
 
@@ -1264,7 +1290,7 @@ export default function Home() {
           tradesRef.current = tradesRef.current.filter((t) => t.ts >= tenMinAgo);
         }
 
-        const whaleMin = settingsRef.current.whaleMin || 300000;
+        const whaleMin = whaleThreshold(settingsRef.current.whaleMin); // Görev C: 50k taban
 
         // 1. Whale Detector
         if (trade.notional >= whaleMin && now - lastWhaleRef.current > 2000) {
@@ -1341,6 +1367,7 @@ export default function Home() {
         }
       },
       onMarkPrice: (mark) => {
+        lastMarkTsRef.current = Date.now(); // Görev C: tazelik takibi
         setMarkPrice(mark.markPrice);
         setFundingRate(mark.fundingRate);
         setNextFundingTime(mark.nextFundingTime);
@@ -1372,6 +1399,7 @@ export default function Home() {
         }
       },
       onDepthUpdate: (depth) => {
+        lastDepthTsRef.current = Date.now(); // Görev C: tazelik takibi
         bidsBookRef.current = depth.bids;
         asksBookRef.current = depth.asks;
 
@@ -1383,7 +1411,7 @@ export default function Home() {
           setAsksBook(new Map(depth.asks));
         }
 
-        const whaleMin = settingsRef.current.whaleMin || 300000;
+        const whaleMin = whaleThreshold(settingsRef.current.whaleMin); // Görev C: 50k taban
 
         // Spoofing Detector (saf çekirdek lib/flow-detectors.ts)
         const currentWalls = collectWalls(depth.bids, depth.asks, whaleMin, now);
@@ -1415,33 +1443,42 @@ export default function Home() {
           const mid = (bestBid + bestAsk) / 2 || lastPriceRef.current;
 
           if (mid > 0) {
-            const bins: HeatmapFrame['bins'] = [];
-            let maxN = 0;
+            // Görev D: tick-bucket dedupe + gürültü kesimi (Stage-4 paritesi)
+            const tick = tickSizeRef.current;
+            const byKey = new Map<string, HeatmapBin>();
+            const addBin = (side: 'B' | 'A', p: number, q: number) => {
+              const notional = p * q;
+              if (notional <= 0) return;
+              const price = tick > 0 ? Math.round(p / tick) * tick : p;
+              const k = `${side}|${price}`;
+              const prevBin = byKey.get(k);
+              if (prevBin) {
+                prevBin.notional += notional;
+                prevBin.price = (prevBin.price + price) / 2;
+              } else {
+                byKey.set(k, { side, price, notional });
+              }
+            };
 
             depth.bids.forEach((q, p) => {
-              if (Math.abs(p - mid) / mid <= 0.015) {
-                const notional = p * q;
-                if (notional > maxN) maxN = notional;
-                bins.push({ side: 'B', price: p, notional });
-              }
+              if (Math.abs(p - mid) / mid <= 0.015) addBin('B', p, q);
             });
-
             depth.asks.forEach((q, p) => {
-              if (Math.abs(p - mid) / mid <= 0.015) {
-                const notional = p * q;
-                if (notional > maxN) maxN = notional;
-                bins.push({ side: 'A', price: p, notional });
-              }
+              if (Math.abs(p - mid) / mid <= 0.015) addBin('A', p, q);
             });
 
-            bins.sort((a, b) => b.notional - a.notional);
-            const topBins = bins.slice(0, 180);
+            const sortedBins = [...byKey.values()].sort((a, b) => b.notional - a.notional);
+            if (sortedBins.length) {
+              const maxN = sortedBins[0].notional;
+              const cut = maxN * 0.035; // %3.5 gürültü eşiği
+              const topBins = sortedBins.filter((b) => b.notional >= cut).slice(0, 220);
 
-            setHeatmapFrames((prev) => {
-              const next = [...prev, { t: Math.floor(now / 1000), bins: topBins, max: maxN }];
-              if (next.length > 900) next.shift(); // 15-minute depth heatmap window
-              return next;
-            });
+              setHeatmapFrames((prev) => {
+                const next = [...prev, { t: Math.floor(now / 1000), bins: topBins, max: maxN }];
+                if (next.length > 900) next.shift(); // 15-minute depth heatmap window
+                return next;
+              });
+            }
           }
         }
       },

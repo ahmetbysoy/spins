@@ -99,7 +99,9 @@ export interface SpoofRemoval {
   ageMs: number;
 }
 
-/** Kısa ömürlü (<4s) ve büyük (>= whaleMin*1.5) duvar iptalleri. */
+/** Kısa ömürlü (<8s) ve büyük (>= whaleMin*1.5) duvar iptalleri. (Stage-4 paritesi) */
+export const SPOOF_MAX_AGE_MS = 8000;
+
 export function detectSpoofRemovals(
   prevWalls: Map<number, WallInfo>,
   currentWalls: Map<number, WallInfo>,
@@ -110,7 +112,7 @@ export function detectSpoofRemovals(
   prevWalls.forEach((w, price) => {
     if (currentWalls.has(price)) return;
     const age = now - w.ts;
-    if (age < 4000 && w.notional >= whaleMin * 1.5) {
+    if (age < SPOOF_MAX_AGE_MS && w.notional >= whaleMin * 1.5) {
       out.push({ price, notional: w.notional, side: w.side, ageMs: age });
     }
   });
