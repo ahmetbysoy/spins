@@ -10,6 +10,7 @@ import { SignalCard } from '@/components/SignalCard';
 import { OrderFlowLog } from '@/components/OrderFlowLog';
 import { MarketScanner } from '@/components/MarketScanner';
 import { PatternPoolView } from '@/components/PatternPoolView';
+import { BacktestPanel } from '@/components/BacktestPanel';
 import { PatternRadarCard } from '@/components/PatternRadarCard';
 import { SettingsModal } from '@/components/SettingsModal';
 import { showToast } from '@/components/ui/toast';
@@ -28,6 +29,7 @@ import {
   PatternStats,
   SignalLogEntry,
   SymbolInfo,
+  AppView,
   Ticker24h,
   TradeEvent
 } from '@/lib/types';
@@ -139,7 +141,7 @@ export default function Home() {
   // Navigation & Core State
   const [symbol, setSymbol] = useState<string>('BTCUSDT');
   const [interval, setInterval] = useState<string>('5m');
-  const [activeView, setActiveView] = useState<'chart' | 'signal' | 'scanner' | 'pool' | 'settings'>('chart');
+  const [activeView, setActiveView] = useState<AppView>('chart');
   const [symbols, setSymbols] = useState<string[]>([]);
   const [symbolInfos, setSymbolInfos] = useState<SymbolInfo[]>([]);
   const [tickers, setTickers] = useState<Ticker24h[]>([]);
@@ -1600,6 +1602,8 @@ export default function Home() {
             <OrderFlowLog flowEvents={flowEvents} signals={signals} />
           </div>
         )}
+
+        {activeView === 'backtest' && <BacktestPanel />}
 
         {activeView === 'scanner' && (
           <div className="flex-1 flex flex-col min-h-0">

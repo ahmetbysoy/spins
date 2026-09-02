@@ -13,7 +13,7 @@ import {
   BellRing,
   History
 } from 'lucide-react';
-import { Ticker24h } from '@/lib/types';
+import { AppView, Ticker24h } from '@/lib/types';
 import { soundEngine } from '@/lib/audio';
 
 interface NavbarProps {
@@ -23,8 +23,8 @@ interface NavbarProps {
   tickers: Ticker24h[];
   favs: string[];
   onToggleFav: (symbol: string) => void;
-  activeView: 'chart' | 'signal' | 'scanner' | 'pool' | 'settings';
-  onChangeView: (view: 'chart' | 'signal' | 'scanner' | 'pool' | 'settings') => void;
+  activeView: AppView;
+  onChangeView: (view: AppView) => void;
   lastPrice: number;
   fundingRate: number | null;
   nextFundingTime: number | null;

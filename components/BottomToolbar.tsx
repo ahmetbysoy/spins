@@ -6,13 +6,14 @@ import {
   Zap,
   Layers,
   Brain,
+  FlaskConical,
   Settings
 } from 'lucide-react';
-import { Ticker24h } from '@/lib/types';
+import { AppView, Ticker24h } from '@/lib/types';
 
 interface BottomToolbarProps {
-  activeView: 'chart' | 'signal' | 'scanner' | 'pool' | 'settings';
-  onChangeView: (view: 'chart' | 'signal' | 'scanner' | 'pool' | 'settings') => void;
+  activeView: AppView;
+  onChangeView: (view: AppView) => void;
   symbol: string;
   lastPrice: number;
   tickers: Ticker24h[];
@@ -27,7 +28,7 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
   onChangeView
 }) => {
   const tabs: {
-    id: 'chart' | 'signal' | 'scanner' | 'pool' | 'settings';
+    id: AppView;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
   }[] = [
@@ -50,6 +51,11 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
       id: 'pool',
       label: 'Havuz',
       icon: Brain
+    },
+    {
+      id: 'backtest',
+      label: 'Backtest',
+      icon: FlaskConical
     },
     {
       id: 'settings',

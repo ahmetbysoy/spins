@@ -7,6 +7,9 @@ export interface Candle {
   volume: number;
 }
 
+/** Uygulama görünümü (navbar/toolbar/page ortak tipi) */
+export type AppView = 'chart' | 'signal' | 'scanner' | 'pool' | 'backtest' | 'settings';
+
 export interface TradeEvent {
   ts: number;
   price: number;

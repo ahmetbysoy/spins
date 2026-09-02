@@ -10,6 +10,7 @@ SPINS, Binance vadeli piyasaları için geliştirilmiş, ileri düzey orderflow 
 - **Pattern Motoru:** 48'lik desen taksonomisi ile 1m/5m periyotlarda otomatik sinyal üretimi.
 - **AI Yorum (opsiyonel):** Sinyal anında Gemini destekli Türkçe piyasa yorumu; anahtar yoksa yerel esprili fallback havuzu.
 - **Desen Radarı:** Favoriler + top hacimli coinleri 1m/5m'de arka planda tarayan çoklu sembol tarayıcı (toast + ses + sinyal logu).
+- **Backtest Paneli:** Havuzdaki geçmiş kurgularla kümülatif ret10 eğrisi, aylık kırılım, R-multiple dağılımı, en iyi/en zayıf desen tabloları ve filtreler (coin/TF/yön/SAR/kaynak).
 - **Robustluk:** Sinyal logu IndexedDB'de kalıcı, tarayıcı bildirimleri (sinyal/radar/whale/likidasyon), error boundary ve temalı yükleme ekranı.
 
 ## Gereksinimler
@@ -64,7 +65,8 @@ Tarayıcı görünümünün en üstündeki radar kartı, favorilerin + top hacim
 | P2.1 | Desen Radarı: favoriler + top hacim çoklu sembol arka plan tarayıcı | ✅ |
 | P2.2 | Robustluk: kalıcı sinyal logu, tarayıcı bildirimleri, error boundary, loading UI | ✅ |
 | P3 | `page.tsx` hook'lara ayrıştırma, saf flow dedektörleri (test kapsamı) | ✅ (dedektörler); UI hook ayrıştırma sürüyor |
-| P4 (fikir) | Geçmiş test (backtest) paneli, çoklu düzen kaydırma, Telegram bridge | 💡 |
+| P4 | Backtest paneli: equity eğrisi, aylık ısı, R dağılımı, desen tabloları | ✅ |
+| P5 (fikir) | Telegram bridge, çoklu düzen kaydırma, UI hook ayrıştırma | 💡 |
 
 ## Lisans
 
