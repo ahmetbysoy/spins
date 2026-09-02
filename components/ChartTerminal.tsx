@@ -15,7 +15,9 @@ import {
   type HistogramData,
   type SeriesMarker,
   type Time,
-  type LineWidth
+  type LineWidth,
+  type MouseEventParams,
+  TickMarkType
 } from 'lightweight-charts';
 
 // REV-6: LineWidth clamp helper
@@ -160,6 +162,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   // Likidite overlay legend'i (kapatilabilir; tercih localStorage'da)
   const [legendOpen, setLegendOpen] = useState(true);
   const [fsSymOpen, setFsSymOpen] = useState(false);
+  // Zaman ekseni rotuşları: crosshair mum okuma satırı + mum kapanış geri sayımı
+  const [hoverBar, setHoverBar] = useState<{ time: number; o: number; h: number; l: number; c: number; vol?: number } | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const lastCandleRef = useRef<Candle | null>(null);
+  lastCandleRef.current = candles.length ? candles[candles.length - 1] : null;
   // Android geri tusu: sembol aramayi kapatir (tam ekrandan once)
   useAndroidBack(fsSymOpen, () => setFsSymOpen(false));
   const [fsQuery, setFsQuery] = useState('');
@@ -224,10 +231,30 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       crosshair: {
         mode: 0
       },
+      localization: {
+        // crosshair zaman etiketi Turkce: "2 Eyl 14:05" (fiyat formati dokunulmaz)
+        timeFormatter: (t: Time) =>
+          typeof t === 'number'
+            ? new Date(t * 1000).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+            : String(t)
+      },
+      // Zaman ekseni rötuşları: dakika hizali TF'lerde saniye ":00" gurultusudur
+      // (secondsVisible:false bilincli); saniyelik ihtiyac kapanis geri sayimi +
+      // crosshair okuma satiri karsilar (bkz. docs/TIME-AXIS-BRAINSTORM.md).
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
-        borderColor: '#2a3038'
+        borderColor: '#2a3038',
+        tickMarkFormatter: (t: Time, tickType: TickMarkType) => {
+          const d = typeof t === 'number' ? new Date(t * 1000) : null;
+          if (!d) return String(t);
+          if (tickType === TickMarkType.Year) return String(d.getFullYear());
+          if (tickType === TickMarkType.Month) return d.toLocaleDateString('tr-TR', { month: 'short' });
+          if (tickType === TickMarkType.DayOfMonth) return String(d.getDate());
+          if (tickType === TickMarkType.TimeWithSeconds)
+            return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        }
       },
       rightPriceScale: {
         borderColor: '#2a3038',
@@ -417,6 +444,44 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       }
     });
   }, [settings.showRsi, settings.showMacd]);
+
+  // Crosshair OKLC+Zaman okuma satiri: imlecin uzerindeki mumu gosterir (yoksa son mum)
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const onMove = (param: MouseEventParams) => {
+      const s = candleSeriesRef.current;
+      if (!s || param.time === undefined || !param.point) {
+        setHoverBar(null);
+        return;
+      }
+      const d = param.seriesData.get(s) as { open: number; high: number; low: number; close: number } | undefined;
+      if (!d) return;
+      const v = volSeriesRef.current
+        ? (param.seriesData.get(volSeriesRef.current) as { value: number } | undefined)
+        : undefined;
+      setHoverBar({ time: param.time as number, o: d.open, h: d.high, l: d.low, c: d.close, vol: v?.value });
+    };
+    chart.subscribeCrosshairMove(onMove);
+    return () => chart.unsubscribeCrosshairMove(onMove);
+  }, [symbol, interval, settings.showRsi, settings.showMacd]);
+
+  // Mum kapanis geri sayimi (1sn tick): son bar zamanindan sonraki cizgiye kalan sure
+  useEffect(() => {
+    const tfSec = intervalToSeconds(interval);
+    const tick = () => {
+      const last = lastCandleRef.current;
+      if (!last) {
+        setCountdown(null);
+        return;
+      }
+      const left = Math.ceil(((last.time + tfSec) * 1000 - Date.now()) / 1000);
+      setCountdown(left > 0 && left <= tfSec ? left : null);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [interval]);
 
   // Dynamic priceFormat update whenever symbolInfo changes (precision & minMove/tickSize)
   useEffect(() => {
@@ -1395,6 +1460,62 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
       {/* Main Chart Canvas Area */}
       <div className="chart-wrap flex-1 relative min-h-0 w-full h-full overflow-hidden" ref={containerRef}>
+          {/* Crosshair OHLC + Zaman okuma satiri (imlec yoksa son mum) */}
+          {(hoverBar ?? (lastCandleRef.current
+            ? {
+                time: lastCandleRef.current.time,
+                o: lastCandleRef.current.open,
+                h: lastCandleRef.current.high,
+                l: lastCandleRef.current.low,
+                c: lastCandleRef.current.close,
+                vol: lastCandleRef.current.volume
+              }
+            : null)) && (() => {
+            const b = hoverBar ?? {
+              time: lastCandleRef.current!.time,
+              o: lastCandleRef.current!.open,
+              h: lastCandleRef.current!.high,
+              l: lastCandleRef.current!.low,
+              c: lastCandleRef.current!.close,
+              vol: lastCandleRef.current!.volume
+            };
+            const up = b.c >= b.o;
+            const chg = b.o ? ((b.c - b.o) / b.o) * 100 : 0;
+            const volTxt = b.vol != null ? new Intl.NumberFormat('tr-TR', { notation: 'compact' }).format(b.vol) : '—';
+            return (
+              <div
+                className={`absolute left-2 z-30 pointer-events-none select-none bg-[#0d1117]/80 backdrop-blur-sm border border-[#22272e] rounded-md px-2 py-1 text-[10px] font-mono flex flex-wrap items-center gap-x-2 gap-y-0.5 max-w-[92%] ${
+                  isFullscreen ? 'top-12' : legendOpen ? 'top-10' : 'top-2'
+                }`}
+              >
+                <span className="text-slate-400">
+                  {new Date(b.time * 1000).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span className="text-slate-500">O <span className="text-slate-300">{b.o}</span></span>
+                <span className="text-slate-500">H <span className="text-slate-300">{b.h}</span></span>
+                <span className="text-slate-500">L <span className="text-slate-300">{b.l}</span></span>
+                <span className={up ? 'text-emerald-400' : 'text-rose-400'}>
+                  C {b.c} ({up ? '+' : ''}{chg.toFixed(2)}%)
+                </span>
+                <span className="text-slate-500">V <span className="text-slate-300">{volTxt}</span></span>
+              </div>
+            );
+          })()}
+
+          {/* Mum kapanis geri sayimi: 1m/5m scalp'in saniye bilgisi burada */}
+          {countdown !== null && (
+            <div
+              className={`absolute bottom-[34px] right-[76px] z-30 pointer-events-none select-none font-mono text-[11px] font-bold px-1.5 py-0.5 rounded-md border backdrop-blur-sm ${
+                countdown <= 10
+                  ? 'text-amber-400 border-amber-500/40 bg-amber-500/10'
+                  : 'text-slate-400 border-[#22272e] bg-[#0d1117]/80'
+              }`}
+              title="Mum kapanışına kalan süre"
+            >
+              ⏱ {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+            </div>
+          )}
+
         {/* Heatmap Canvas */}
         <canvas
           ref={heatmapCanvasRef}
