@@ -15,6 +15,11 @@ on:
 permissions:
   contents: write
 
+# ayni anda tek APK build — eski run iptal edilir
+concurrency:
+  group: apk-build
+  cancel-in-progress: true
+
 jobs:
   apk:
     name: Android APK build
@@ -68,7 +73,7 @@ jobs:
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: spins-apk
+          name: spins-apk-${{ github.sha }}
           path: android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 

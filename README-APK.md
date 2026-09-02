@@ -33,6 +33,10 @@ cd android && ./gradlew assembleDebug
 # çıktı: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Çevrimdışı / hata ekranı
+Site yüklenemezse (ağ kesintisi vb.) WebView `public/offline.html`'e düşer:
+SPINS ekranı + "Tekrar Dene" + 10sn otomatik yeniden deneme.
+
 ## Kabuk ayarları
 `capacitor.config.json` — hedef URL, appId, uygulama adı. İkon/splash:
 `android/app/src/main/res/` (koyu tema, neon mum ikonu).

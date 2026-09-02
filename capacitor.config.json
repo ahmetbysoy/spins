@@ -5,7 +5,8 @@
   "server": {
     "url": "https://spins.vercel.app",
     "cleartext": false,
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "errorPath": "offline.html"
   },
   "android": {
     "allowMixedContent": false
