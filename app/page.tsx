@@ -16,6 +16,7 @@ import { MiniChartCard } from '@/components/MiniChartCard';
 import { SettingsModal } from '@/components/SettingsModal';
 import { showToast } from '@/components/ui/toast';
 import { resolvePendingOutcomes } from '@/lib/signal-outcomes';
+import { buzz, SIGNAL_BUZZ } from '@/lib/haptics';
 import { DEFAULT_SETTINGS, useAppSettings } from '@/hooks/use-app-settings';
 import { useMarketData } from '@/hooks/use-market-data';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -288,6 +289,8 @@ export default function Home() {
     } else {
       soundEngine.playSellSignal();
     }
+    // P1: haptik geri bildirim (ayarli — settings.haptics)
+    if (settingsRef.current.haptics) buzz(SIGNAL_BUZZ);
     setSignals((prev) => [
       {
         id: `radar-${Date.now()}-${Math.random()}`,
@@ -308,7 +311,7 @@ export default function Home() {
       },
       ...prev.slice(0, 30)
     ]);
-  }, []);
+  }, [settingsRef]);
 
   // Desen Radarı — favoriler + top hacim, 1m/5m arka plan taraması
   const radar = usePatternRadar({
@@ -911,6 +914,8 @@ export default function Home() {
               } else {
                 soundEngine.playSellSignal();
               }
+              // P1: haptik geri bildirim (ayarli — settings.haptics)
+              if (settingsRef.current.haptics) buzz(SIGNAL_BUZZ);
 
               pendingEngineRef.current = null;
             } else {
@@ -972,6 +977,8 @@ export default function Home() {
               } else {
                 soundEngine.playSellSignal();
               }
+              // P1: haptik geri bildirim (ayarli — settings.haptics)
+              if (settingsRef.current.haptics) buzz(SIGNAL_BUZZ);
               break;
             }
           }

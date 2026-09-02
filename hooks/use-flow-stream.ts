@@ -18,6 +18,7 @@ import {
 } from '@/lib/types';
 import { BinanceStreamClient, fetchKlines, fetchOpenInterest, fetchPremiumIndex, type StreamStatus } from '@/lib/binance';
 import { fetchJsonRaced } from '@/lib/rest-race';
+import { buzz, ALERT_BUZZ } from '@/lib/haptics';
 import { patternBackfillFromCandles } from '@/lib/pattern-engine';
 import { soundEngine } from '@/lib/audio';
 import { pushNotify } from '@/lib/notifications';
@@ -329,6 +330,7 @@ export function useFlowStream(opts: UseFlowStreamOptions): FlowStreamApi {
         if (trade.notional >= whaleMin && now - lastWhaleRef.current > 2000) {
           lastWhaleRef.current = now;
           soundEngine.playWhale();
+          if (settingsRef.current.haptics) buzz(ALERT_BUZZ); // P1: haptik
           if (trade.notional >= whaleMin * 2) {
             pushNotify(
               { title: `🐋 Whale ${trade.side.toUpperCase()} — $${(trade.notional / 1000).toFixed(0)}k`, body: `${symbol} @ $${trade.price}`, tag: `whale-${symbol}` },
@@ -352,6 +354,7 @@ export function useFlowStream(opts: UseFlowStreamOptions): FlowStreamApi {
           if (sweep) {
             lastSweepRef.current = now;
             soundEngine.playWhale();
+            if (settingsRef.current.haptics) buzz(ALERT_BUZZ); // P1: haptik
             const ev: FlowEvent = {
               id: `${now}-${Math.random()}`,
               type: 'SWEEP',
@@ -370,6 +373,7 @@ export function useFlowStream(opts: UseFlowStreamOptions): FlowStreamApi {
           if (burst) {
             lastBurstRef.current = now;
             soundEngine.playWhale();
+            if (settingsRef.current.haptics) buzz(ALERT_BUZZ); // P1: haptik
             const ev: FlowEvent = {
               id: `${now}-${Math.random()}`,
               type: 'DELTA_BURST',

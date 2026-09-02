@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showLadder: true,
   showHeatmap: true,
   whaleAlerts: true,
+  haptics: true,
   whaleMin: 300000,
   wallPct: 90,
   showBB: false,

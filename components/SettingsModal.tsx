@@ -159,6 +159,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">Titreşim (Haptik):</label>
+              <input
+                type="checkbox"
+                checked={settings.haptics}
+                onChange={(e) => update('haptics', e.target.checked)}
+                className="w-4 h-4 rounded text-emerald-500"
+              />
+            </div>
+
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
               <label className="text-slate-300 font-medium">Likidite Isı Haritası (Heatmap):</label>
               <input
                 type="checkbox"

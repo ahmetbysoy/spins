@@ -1465,7 +1465,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   localStorage.setItem('fs_legend_closed', 'true');
                 } catch {}
               }}
-              className="text-slate-500 hover:text-slate-200 ml-1 px-1 min-h-[24px]"
+              className="text-slate-500 hover:text-slate-200 ml-1 px-2 min-h-[32px] touch-manipulation active:scale-95"
               aria-label="Açıklamayı kapat"
             >
               ✕

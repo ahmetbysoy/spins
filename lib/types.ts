@@ -96,6 +96,7 @@ export interface AppSettings {
   showLadder: boolean;
   showHeatmap: boolean;
   whaleAlerts: boolean;
+  haptics: boolean;
   whaleMin: number;
   wallPct: number;
   showBB: boolean;

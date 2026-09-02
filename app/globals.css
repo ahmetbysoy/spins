@@ -27,6 +27,26 @@ a,
   }
 }
 
+/* P1 dokunmatik cilasi: her butonda anlik basili geri bildirimi (hover beklemeden) */
+@media (hover: none) and (pointer: coarse) {
+  button:active,
+  [role='button']:active {
+    filter: brightness(1.35);
+  }
+  /* uygulama hissi: mobilde scrollbar gizle */
+  * {
+    scrollbar-width: none;
+  }
+  ::-webkit-scrollbar {
+    display: none;
+  }
+  /* dokunmatikte checkbox daha genis (w-4 h-4 -> 20px) */
+  input[type='checkbox'] {
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+  }
+}
+
 @theme {
   --breakpoint-xs: 425px;
 }
