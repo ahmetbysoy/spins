@@ -73,6 +73,10 @@ Yapılacaklar:
 
 ### GÖREV C — Karar Motoru Parite Kuralları (Öncelik: ORTA)
 
+> **DURUM: TAMAMLANDI (2026-09-02).** Kurallar `lib/scoring-rules.ts` içinde saf fonksiyonlar
+> olarak uygulandı (12 birim test) ve `evaluateRawFlow`'a bağlandı. Spoof penceresi de
+> `SPOOF_MAX_AGE_MS = 8000`'e çekildi (flow-detectors + sınır testi).
+
 Durum: `app/page.tsx` → `evaluateRawFlow` (Katman 2 skorlama). HTML'de olup bizde olmayan
 kurallar. Her kural `reasons[]` elemanı üretmeli (mevcut üslup).
 
@@ -99,6 +103,10 @@ Kabul: mevcut sinyal akışı regresyona uğramıyor; yeni kurallar gerekçelerl
 
 ### GÖREV D — Heatmap Kalite (Öncelik: ORTA-DÜŞÜK)
 
+> **DURUM: TAMAMLANDI (2026-09-02).** `onDepthUpdate` örneklemesi tick-bucket dedupe +
+> %3.5 gürültü kesimi + 220 bin limitine geçirildi; tick boyutu `symbolInfos`'tan
+> `tickSizeRef` ile takip ediliyor.
+
 Durum: `app/page.tsx` → `onDepthUpdate` içindeki heatmap örnekleme: ±%1.5 bant, ham
 180 bin, gürültü kesimi yok. HTML: tick-bucket dedupe + max'ın %3.5 altını kes + 220 bin.
 
@@ -110,6 +118,10 @@ Yapılacaklar:
 3. Kabul: heatmap daha temiz/keskin; düşük gürültülü seviyeler kayboluyor; pencere 900s aynı.
 
 ### GÖREV E — Desen Havuzu Sağlamlaştırma (Öncelik: ORTA)
+
+> **DURUM: TAMAMLANDI (2026-09-02).** `patternRecentExists` (DB ±3 mum dedupe, live yolda
+> çağrılıyor), backfill'de RAM seviyesinde aynı guard, `settlePatternEventWithCandles` (saf,
+> testli) ve `patternCompleteAllOpenEvents` (açılışta fire-and-forget) eklendi.
 
 Yapılacaklar:
 1. `lib/pattern-engine.ts`'e ekle ve test et:

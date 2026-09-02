@@ -6,8 +6,11 @@ import {
   patternName,
   patternAllIds,
   intervalToSeconds,
-  PATTERN_NAMES
+  PATTERN_NAMES,
+  patternRecentExists,
+  settlePatternEventWithCandles
 } from './pattern-engine';
+import { PatternEvent } from './types';
 import { isAllowedBinancePath } from './proxy-allowlist';
 
 function candles(closes: number[], spread = 0.5): Candle[] {
@@ -93,5 +96,70 @@ describe('binance proxy allowlist', () => {
     expect(isAllowedBinancePath('fapi/v1/klines?symbol=X')).toBe(false);
     expect(isAllowedBinancePath('')).toBe(false);
     expect(isAllowedBinancePath('https://evil.com/fapi/v1/klines')).toBe(false);
+  });
+});
+
+describe('Görev E: havuz sağlamlaştırma', () => {
+  const mkCandles = (n: number, start = 1_700_000_000): Candle[] =>
+    Array.from({ length: n }, (_, k) => ({
+      time: start + k * 300,
+      open: 100 + k * 0.1,
+      high: 100.5 + k * 0.1,
+      low: 99.5 + k * 0.1,
+      close: 100 + k * 0.1,
+      volume: 10
+    }));
+
+  const baseEv = (over: Partial<PatternEvent> = {}): PatternEvent => ({
+    schemaVersion: 1,
+    source: 'live',
+    coin: 'BTCUSDT',
+    timeframe: '5m',
+    timestamp: (1_700_000_000 + 10 * 300) * 1000,
+    eventKey: 'k1',
+    pair: '9x21',
+    dir: 'UP',
+    filter: 'F1',
+    sarBucket: 'SAR0',
+    patternId: '9x21_UP_SAR0_F1',
+    patternKey: '5m:9x21_UP_SAR0_F1',
+    coinPatternKey: 'BTCUSDT:5m:9x21_UP_SAR0_F1',
+    volRegime: 'MID',
+    trendRegime: 'UP',
+    regimeKey: 'MID_UP',
+    refClose: 100,
+    status: 'tracking',
+    createdAt: Date.now(),
+    ...over
+  });
+
+  it('settlePatternEventWithCandles: çözülebilir event settle olur ve sonuç taşır', () => {
+    const ev = baseEv();
+    const settled = settlePatternEventWithCandles(ev, mkCandles(60));
+    expect(settled).not.toBeNull();
+    expect(settled?.status).toBe('settled');
+    expect(settled?.ret10).toBeDefined();
+    expect(settled?.mfe20).toBeDefined();
+  });
+
+  it('20 mum dolmadan settle edilmez (tracking kalır)', () => {
+    const ev = baseEv({ timestamp: (1_700_000_000 + 45 * 300) * 1000 });
+    expect(settlePatternEventWithCandles(ev, mkCandles(50))).toBeNull();
+  });
+
+  it('mum seride bulunamazsa null döner', () => {
+    const ev = baseEv({ timestamp: (1_699_000_000) * 1000 });
+    expect(settlePatternEventWithCandles(ev, mkCandles(60))).toBeNull();
+  });
+
+  it('zaten settled olan event olduğu gibi döner', () => {
+    const ev = baseEv({ status: 'settled', ret10: 0.42 });
+    const out = settlePatternEventWithCandles(ev, mkCandles(60));
+    expect(out?.status).toBe('settled');
+    expect(out?.ret10).toBeCloseTo(0.42, 10);
+  });
+
+  it('patternRecentExists: DB yokken (node/test) güvenli false', async () => {
+    expect(await patternRecentExists('BTCUSDT', '5m', '9x21_UP_SAR0_F1', Date.now())).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { Candle, PatternEvent, PatternStats } from './types';
 import { sma, psar, atrRatios, percentile, wilsonLower, avg, std, median } from './indicators';
+import { fetchKlines } from './binance';
 
 export const PPOOL_SCHEMA_VERSION = 1;
 export const PPOOL_DB_NAME = 'fs_pattern_pool';
@@ -450,6 +451,109 @@ export async function patternGetStatsBest(
   return { stats: coinStats || null, scope: coinStats ? 'coin' : 'global' };
 }
 
+// --- Havuz sağlamlaştırma (Görev E, Stage-4 paritesi) ---
+
+/**
+ * DB seviyesinde ±3 mum dedupe: aynı coin+tf+desen için verilen zamana 3 mum
+ * içinde kalmış bir event varsa true döner (çapraz oturum duplicate koruması).
+ */
+export async function patternRecentExists(
+  coin: string,
+  tf: string,
+  patId: string,
+  tsMs: number,
+  excludeId?: number
+): Promise<boolean> {
+  const key = `${coin}:${tf}:${patId}`;
+  let arr: PatternEvent[] = [];
+  try {
+    arr = await dbIndexAll<PatternEvent>('events', 'coinPatternKey', key);
+  } catch {
+    return false;
+  }
+  const winMs = intervalToSeconds(tf) * 3 * 1000;
+  return arr.some((e) => e.id !== excludeId && Math.abs((e.timestamp || 0) - tsMs) <= winMs);
+}
+
+/**
+ * Saf: açık (pending/tracking) event'i verilen mum serisiyle settle etmeye çalışır.
+ * Event mumu seride bulunamazsa ya da 20 mum henüz dolmadıysa null (tracking kalmalı).
+ */
+export function settlePatternEventWithCandles(ev: PatternEvent, candles: Candle[]): PatternEvent | null {
+  if (ev.status === 'settled') return ev;
+  const tsSec = Math.floor((ev.timestamp || 0) / 1000);
+  const idx = candles.findIndex((c) => c.time === tsSec);
+  if (idx < 0) return null;
+  const dir: 'UP' | 'DOWN' = ev.dir === 'UP' ? 'UP' : 'DOWN';
+  const outcome = patternOutcome(candles, idx, dir);
+  if (!outcome) return null;
+  return {
+    ...ev,
+    status: 'settled',
+    settledAt: Date.now(),
+    ...outcome
+  };
+}
+
+/**
+ * Açılış temizliği: tüm pending/tracking event'leri coin+tf bazında gruplayıp
+ * son mumlarla settle etmeye çalışır. Bayat kayıtlar havuz istatistiklerine
+ * artık kirlilik katmaz. (Uygulama açılışında fire-and-forget çağrılır.)
+ */
+export async function patternCompleteAllOpenEvents(maxEvents = 200): Promise<number> {
+  await initPatternDB();
+  if (!dbInstance) return 0;
+
+  let all: PatternEvent[] = [];
+  try {
+    all = await dbAll<PatternEvent>('events');
+  } catch {
+    return 0;
+  }
+  const open = all.filter((e) => e.status === 'pending' || e.status === 'tracking');
+  if (!open.length) return 0;
+
+  const groups = new Map<string, PatternEvent[]>();
+  open.slice(0, maxEvents).forEach((e) => {
+    if (!e.coin || !e.timeframe) return;
+    const k = `${e.coin}:${e.timeframe}`;
+    const arr = groups.get(k) || [];
+    arr.push(e);
+    groups.set(k, arr);
+  });
+
+  let settledCount = 0;
+  for (const [groupKey, evs] of groups) {
+    const [coin, tf] = groupKey.split(':');
+    let candles: Candle[] = [];
+    try {
+      candles = await fetchKlines(coin, tf, 120);
+    } catch {
+      continue; // geo-block/ağ hatası: event tracking kalır, sonraki açılışta tekrar denenir
+    }
+    if (!candles.length) continue;
+
+    for (const ev of evs) {
+      const settled = settlePatternEventWithCandles(ev, candles);
+      if (settled) {
+        try {
+          await dbPut('events', settled);
+        } catch {
+          continue;
+        }
+        if (settled.patternKey) {
+          await patternRecomputeStats(settled.patternKey).catch(() => {});
+        }
+        if (settled.coinPatternKey) {
+          await patternRecomputeStats(settled.coinPatternKey).catch(() => {});
+        }
+        settledCount++;
+      }
+    }
+  }
+  return settledCount;
+}
+
 export async function patternBackfillFromCandles(
   coin: string,
   timeframe: string,
@@ -481,6 +585,17 @@ export async function patternBackfillFromCandles(
 
   const eventsToAdd: PatternEvent[] = [];
   const eventsToUpdate: PatternEvent[] = [];
+
+  // Görev E: ±3 mum desen dedupe — aynı desen 3 mum içinde tekrar yazılmaz (RAM seviyesi;
+  // mevcut kayıtlardan tohumlanır, çapraz oturum koruması DB seviyesinde patternRecentExists'te)
+  const recentByPattern = new Map<string, number>();
+  existingEventsList.forEach((ev) => {
+    if (ev.patternId && ev.timestamp) {
+      const prev = recentByPattern.get(ev.patternId);
+      if (prev === undefined || ev.timestamp > prev) recentByPattern.set(ev.patternId, ev.timestamp);
+    }
+  });
+  const dedupeWinMs = intervalToSeconds(timeframe) * 3 * 1000;
 
   for (let i = ma3 + 5; i < n; i++) {
     const crosses = patternCrossesAt(ctx, i, ma1, ma2, ma3);
@@ -517,6 +632,11 @@ export async function patternBackfillFromCandles(
         continue;
       }
 
+      const lastSameTs = recentByPattern.get(patId);
+      if (lastSameTs !== undefined && Math.abs(candles[i].time * 1000 - lastSameTs) <= dedupeWinMs) {
+        continue; // ±3 mum içinde aynı desen zaten kaydedilmiş
+      }
+
       const ev: PatternEvent = {
         schemaVersion: PPOOL_SCHEMA_VERSION,
         source: 'backfill',
@@ -543,6 +663,7 @@ export async function patternBackfillFromCandles(
 
       eventsToAdd.push(ev);
       existingMap.set(eventKey, ev);
+      recentByPattern.set(patId, candles[i].time * 1000);
       added++;
       if (outcome) {
         settled++;
