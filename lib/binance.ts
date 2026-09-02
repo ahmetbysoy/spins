@@ -1,28 +1,14 @@
 import { Candle, DepthUpdateEvent, FlowEvent, FlowSnapshot, LiquidationEvent, SymbolInfo, Ticker24h, TradeEvent } from './types';
+import { fetchJsonRaced } from './rest-race';
 
 export const REST_BASE = typeof window !== 'undefined' ? '/api/binance' : 'https://fapi.binance.com';
 export const WS_BASE = 'wss://fstream.binance.com';
 export const WS_MARKET_BASE = 'wss://fstream.binance.com/market';
 export const WS_PUBLIC_BASE = 'wss://fstream.binance.com/public';
 
-function fetchWithTimeout(url: string, timeoutMs: number = 8000): Promise<Response> {
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-  return fetch(url, { signal: controller?.signal })
-    .then((res) => {
-      if (timer) clearTimeout(timer);
-      return res;
-    })
-    .catch((err) => {
-      if (timer) clearTimeout(timer);
-      throw err;
-    });
-}
-
 export async function fetchExchangeInfo(): Promise<SymbolInfo[]> {
-  const res = await fetchWithTimeout(`${REST_BASE}/fapi/v1/exchangeInfo`);
-  if (!res.ok) throw new Error(`exchangeInfo HTTP ${res.status}`);
-  const data = await res.json();
+  // PREDATOR port'u: REST cagrilari rest-race yaristirmasindan gecer (geo-block direnc)
+  const data = await fetchJsonRaced<any>('/fapi/v1/exchangeInfo');
   const symbols: SymbolInfo[] = [];
 
   for (const s of data.symbols) {
@@ -46,9 +32,7 @@ export async function fetchExchangeInfo(): Promise<SymbolInfo[]> {
 }
 
 export async function fetchKlines(symbol: string, interval: string, limit: number = 600): Promise<Candle[]> {
-  const res = await fetchWithTimeout(`${REST_BASE}/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
-  if (!res.ok) throw new Error(`klines HTTP ${res.status}`);
-  const data = await res.json();
+  const data = await fetchJsonRaced<any[]>(`/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
   if (!Array.isArray(data)) throw new Error('Invalid klines response');
 
   return data.map((k) => ({
@@ -62,9 +46,7 @@ export async function fetchKlines(symbol: string, interval: string, limit: numbe
 }
 
 export async function fetch24hTickers(): Promise<Ticker24h[]> {
-  const res = await fetchWithTimeout(`${REST_BASE}/fapi/v1/ticker/24hr`);
-  if (!res.ok) throw new Error(`ticker/24hr HTTP ${res.status}`);
-  const data = await res.json();
+  const data = await fetchJsonRaced<any>('/fapi/v1/ticker/24hr');
   return (data as { symbol: string; lastPrice: string; priceChangePercent: string; quoteVolume: string; highPrice: string; lowPrice: string; count: number }[])
     .filter((t) => t.symbol.endsWith('USDT'))
     .map((t) => ({
@@ -81,9 +63,7 @@ export async function fetch24hTickers(): Promise<Ticker24h[]> {
 
 export async function fetchOpenInterest(symbol: string): Promise<number | null> {
   try {
-    const res = await fetchWithTimeout(`${REST_BASE}/fapi/v1/openInterest?symbol=${symbol}`, 5000);
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await fetchJsonRaced<any>(`/fapi/v1/openInterest?symbol=${symbol}`);
     const val = parseFloat(data.openInterest);
     return Number.isFinite(val) && val > 0 ? val : null;
   } catch {
@@ -93,9 +73,7 @@ export async function fetchOpenInterest(symbol: string): Promise<number | null> 
 
 export async function fetchPremiumIndex(symbol: string): Promise<{ fundingRate: number | null; markPrice: number | null; nextFundingTime: number | null }> {
   try {
-    const res = await fetchWithTimeout(`${REST_BASE}/fapi/v1/premiumIndex?symbol=${symbol}`, 5000);
-    if (!res.ok) return { fundingRate: null, markPrice: null, nextFundingTime: null };
-    const data = await res.json();
+    const data = await fetchJsonRaced<any>(`/fapi/v1/premiumIndex?symbol=${symbol}`);
     return {
       fundingRate: data.lastFundingRate ? parseFloat(data.lastFundingRate) : null,
       markPrice: data.markPrice ? parseFloat(data.markPrice) : null,
@@ -111,9 +89,7 @@ export async function fetchDepthSnapshot(symbol: string, limit: number = 1000): 
   bids: [number, number][];
   asks: [number, number][];
 }> {
-  const res = await fetchWithTimeout(`${REST_BASE}/fapi/v1/depth?symbol=${symbol}&limit=${limit}`, 6000);
-  if (!res.ok) throw new Error(`depth snapshot HTTP ${res.status}`);
-  const snap = await res.json();
+  const snap = await fetchJsonRaced<any>(`/fapi/v1/depth?symbol=${symbol}&limit=${limit}`);
   const bids: [number, number][] = (snap.bids || []).map((x: [string, string]) => [parseFloat(x[0]), parseFloat(x[1])]);
   const asks: [number, number][] = (snap.asks || []).map((x: [string, string]) => [parseFloat(x[0]), parseFloat(x[1])]);
   return {

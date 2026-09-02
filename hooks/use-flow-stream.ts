@@ -16,7 +16,8 @@ import {
   SymbolInfo,
   TradeEvent
 } from '@/lib/types';
-import { BinanceStreamClient, fetchKlines, fetchOpenInterest, fetchPremiumIndex } from '@/lib/binance';
+import { BinanceStreamClient, fetchKlines, fetchOpenInterest, fetchPremiumIndex, type StreamStatus } from '@/lib/binance';
+import { fetchJsonRaced } from '@/lib/rest-race';
 import { patternBackfillFromCandles } from '@/lib/pattern-engine';
 import { soundEngine } from '@/lib/audio';
 import { pushNotify } from '@/lib/notifications';
@@ -292,8 +293,8 @@ export function useFlowStream(opts: UseFlowStreamOptions): FlowStreamApi {
 
   // 7. Initialize Real-Time WebSocket Streaming Client (Stable Lifecycle)
   useEffect(() => {
-    const client = new BinanceStreamClient(symbol, interval, {
-      onKline: (candle, isClosed) => {
+    // PREDATOR port'u — handler'lar hem WS istemcisine hem REST dusus moduna hizmet eder
+    const handleKline = (candle: Candle, isClosed: boolean) => {
         setLastPrice(candle.close);
         setCandles((prev) => {
           if (!prev.length) return [candle];
@@ -312,8 +313,9 @@ export function useFlowStream(opts: UseFlowStreamOptions): FlowStreamApi {
           // Trigger signal engine on closed candle (ref: bagimlilik zincirinden ayristirildi)
           onClosedCandle.current(candlesRef.current);
         }
-      },
-      onTrade: (trade) => {
+    };
+
+    const handleTrade = (trade: TradeEvent) => {
         tradesRef.current.push(trade);
         const now = trade.ts;
         const tenMinAgo = now - 600000;
@@ -396,14 +398,16 @@ export function useFlowStream(opts: UseFlowStreamOptions): FlowStreamApi {
             setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
           }
         }
-      },
-      onMarkPrice: (mark) => {
+    };
+
+    const handleMark = (mark: { markPrice: number; fundingRate: number; nextFundingTime: number }) => {
         lastMarkTsRef.current = Date.now(); // Görev C: tazelik takibi
         setMarkPrice(mark.markPrice);
         setFundingRate(mark.fundingRate);
         setNextFundingTime(mark.nextFundingTime);
-      },
-      onLiquidation: (liq) => {
+    };
+
+    const handleLiquidation = (liq: LiquidationEvent) => {
         liqsRef.current.push(liq);
         const tenMinAgo = liq.ts - 600000;
         if (liqsRef.current.length > 250 || (liqsRef.current[0] && liqsRef.current[0].ts < tenMinAgo)) {
@@ -428,8 +432,9 @@ export function useFlowStream(opts: UseFlowStreamOptions): FlowStreamApi {
           };
           setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
         }
-      },
-      onDepthUpdate: (depth) => {
+    };
+
+    const handleDepth = (depth: { bids: Map<number, number>; asks: Map<number, number>; lastUpdateId: number }) => {
         lastDepthTsRef.current = Date.now(); // Görev C: tazelik takibi
         bidsBookRef.current = depth.bids;
         asksBookRef.current = depth.asks;
@@ -512,12 +517,86 @@ export function useFlowStream(opts: UseFlowStreamOptions): FlowStreamApi {
             }
           }
         }
-      },
-      onStatusChange: (st) => {
+    };
+
+    // REST dusus modu (PREDATOR port'u): WS 12sn icinde acilmazsa (cografi engel / guclu
+    // firewall) akis, rest-race yaristirmasi uzerinden 5sn'lik polling ile ayakta kalir:
+    // klines (mum + kapanista motor), aggTrades (CVD/whale/sweep, aggId dedupe),
+    // premiumIndex (mark/funding) ve depth snapshot (kitap/OBI/ladder kaba taneli).
+    let degradedTimer: number | null = null;
+    let degradedPollCount = 0;
+    let lastAggId = 0;
+    let wsOpened = false;
+    const stopDegraded = () => {
+      if (degradedTimer !== null) {
+        window.clearInterval(degradedTimer);
+        degradedTimer = null;
+      }
+    };
+    const pollDegraded = async () => {
+      try {
+        degradedPollCount++;
+        const ks = await fetchJsonRaced<any[]>(`/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=2`);
+        for (const k of ks) {
+          handleKline(
+            { time: Math.floor(k[0] / 1000), open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]), volume: parseFloat(k[5]) },
+            !!k[6]
+          );
+        }
+        const trs = await fetchJsonRaced<any[]>(`/fapi/v1/aggTrades?symbol=${symbol}&limit=200`);
+        const fresh = trs.filter((t) => (t.a as number) > lastAggId);
+        if (fresh.length) {
+          lastAggId = fresh[fresh.length - 1].a;
+          for (const t of fresh) {
+            const price = parseFloat(t.p);
+            const qty = parseFloat(t.q);
+            const notional = price * qty;
+            handleTrade({ ts: t.T, price, qty, notional, delta: t.m ? -notional : notional, side: t.m ? 'sell' : 'buy' });
+          }
+        }
+        if (degradedPollCount % 2 === 1) {
+          const pi = await fetchJsonRaced<any>(`/fapi/v1/premiumIndex?symbol=${symbol}`);
+          handleMark({
+            markPrice: parseFloat(pi.markPrice) || 0,
+            fundingRate: pi.lastFundingRate !== undefined ? parseFloat(pi.lastFundingRate) || 0 : 0,
+            nextFundingTime: Number(pi.nextFundingTime) || 0
+          });
+        }
+        if (degradedPollCount % 2 === 0) {
+          const dp = await fetchJsonRaced<any>(`/fapi/v1/depth?symbol=${symbol}&limit=100`);
+          const bids = new Map<number, number>(dp.bids.map((x: string[]) => [parseFloat(x[0]), parseFloat(x[1])] as [number, number]));
+          const asks = new Map<number, number>(dp.asks.map((x: string[]) => [parseFloat(x[0]), parseFloat(x[1])] as [number, number]));
+          handleDepth({ bids, asks, lastUpdateId: Number(dp.lastUpdateId) || 0 });
+        }
+      } catch {
+        // dusus modu da olurse sonraki tur yeniden dener
+      }
+    };
+    const armDegraded = window.setTimeout(() => {
+      if (wsOpened) return;
+      setWsMessage('REST dusus modu (WS engelli olabilir)');
+      degradedTimer = window.setInterval(() => {
+        void pollDegraded();
+      }, 5000);
+      void pollDegraded();
+    }, 12000);
+
+    const client = new BinanceStreamClient(symbol, interval, {
+      onKline: handleKline,
+      onTrade: handleTrade,
+      onMarkPrice: handleMark,
+      onLiquidation: handleLiquidation,
+      onDepthUpdate: handleDepth,
+      onStatusChange: (st: StreamStatus) => {
+
         setWsConnected(st.connected);
         setMarketConnected(st.marketConnected);
         setDepthConnected(st.depthConnected);
         setWsMessage(st.message || '');
+        if (st.connected) {
+          wsOpened = true;
+          stopDegraded();
+        }
       }
     });
 
@@ -525,6 +604,8 @@ export function useFlowStream(opts: UseFlowStreamOptions): FlowStreamApi {
     client.start();
 
     return () => {
+      window.clearTimeout(armDegraded);
+      stopDegraded();
       client.stop();
       clientRef.current = null;
     };
