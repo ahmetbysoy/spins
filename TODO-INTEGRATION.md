@@ -142,6 +142,19 @@ Yapılacaklar:
 
 ---
 
+## GÖREV F — Mini Sembol Grid'i (çoklu düzen alternatifi) — TAMAMLANDI (2026-09-02)
+Kapsam kararı: tam çoklu-pane ChartTerminal + kayıtlı düzen presetleri YOK; ana grafik altında hafif mini kartlar VAR.
+- `components/MiniChartCard.tsx`: lightweight-charts v5 kart (skalsız, şeffaf, ResizeObserver), 150 mum / 15sn REST yenileme (`fetchKlines`), tickers'dan %24s değişim, tıkla=ana sembolle takas, X=kaldır, aktif sembol=emerald çerçeve.
+- `components/ChartTerminal.tsx`: başlıkta cyan MINI hapı (aria-pressed), tam ekran düğmesinden önce.
+- `app/page.tsx`: `miniOn`/`miniSyms` state + localStorage (`fs_mini_on`, `fs_mini_symbols`, maks 3); ana sembol listeden otomatik düşer; takasta eski ana sembol yuvaya geçer; '+ ekle' select (30 seçenek) + boş-durum kutusu; tam ekranda gizli.
+
+## GÖREV G — UI Hook Refactor — TAMAMLANDI (2026-09-02)
+`app/page.tsx` 1829 → ~1220 satır. Kod birebir taşındı (davranış değişikliği yok), motor + JSX page'de kaldı.
+- `hooks/use-app-settings.ts`: DEFAULT_SETTINGS + fs_settings kalıcılığı.
+- `hooks/use-notifications.ts`: bildirim izni + aç/kapa.
+- `hooks/use-market-data.ts`: exchange info + 24s ticker'lar (15sn).
+- `hooks/use-flow-stream.ts`: WS istemcisi (whale/sweep/delta-burst/absorption/spoof dedektörleri), heatmap örnekleme, klines+backfill, OI/funding poller, akış anlık görüntüsü; sinyal motoru `onClosedCandle` ref'i ile beslenir (reconnect storm koruntu). `resetStreams` (sembol) / `clearEvents` (TF) ayrımı orijinal temizlik davranışını korur.
+
 ### GENEL DOĞRULAMA (her görev sonrası)
 ```bash
 npx vitest run        # tüm testler geçmeli (şu an 90)
