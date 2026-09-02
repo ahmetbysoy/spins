@@ -168,7 +168,7 @@ export const MiniChartCard: React.FC<MiniChartCardProps> = ({
               e.stopPropagation();
               onRemove(symbol);
             }}
-            className="text-slate-600 hover:text-rose-400 px-0.5 min-h-[20px] leading-none"
+            className="text-slate-600 hover:text-rose-400 px-1 min-h-[28px] leading-none"
             aria-label={`${symbol} kartını kaldır`}
           >
             <X className="w-3 h-3" />

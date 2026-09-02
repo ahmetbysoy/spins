@@ -171,6 +171,7 @@ npm run build         # production build başarılı
 - `feat(pool): DB-level ±3 mum dedupe + açılışta açık event settle (E)`
 
 ### YASAKLAR / DİKKAT
+- Tailwind class'ını asla runtime'da birleştirme (`bg-emerald-500/${op}` gibi) — Tailwind build-time statik tarama yapar, bu class'lara CSS üretilmez (BacktestPanel `heatColor` ders örneği: çözüm = arkaplanı inline `style` ile ver). Yeni kod eklerken `grep -rn "/\${" components` ile kontrol edin.
 - Mevcut WS lifecycle (ref arkası runSignalEngine) tasarımını bozma (reconnect storm fix'i).
 - `evaluateRawFlow` imzasını koru; Katman 1 tetik akışını değiştirme.
 - Kullanılmayan paket ekleme; lightweight-charts v5 API'si (`chart.addSeries(...)`) kullan.

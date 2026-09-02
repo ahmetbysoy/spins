@@ -38,11 +38,15 @@ function fmtPf(pf: number | null): string {
   return pf.toFixed(2);
 }
 
-function heatColor(sum: number, maxAbs: number): string {
-  if (!maxAbs || sum === 0) return 'bg-[#161b22] text-slate-500';
-  const ratio = Math.min(1, Math.abs(sum) / maxAbs);
-  if (sum > 0) return `bg-emerald-500/${Math.round(15 + ratio * 45)} text-emerald-300`;
-  return `bg-rose-500/${Math.round(15 + ratio * 45)} text-rose-300`;
+// DİKKAT: Tailwind class'ları asla runtime'da birleştirme (bg-emerald-500/${op} gibi) —
+// Tailwind build-time statik tarama yapar, o class için CSS üretilmez.
+// Dinamik opaklık/renk → inline style ile verilir (bg), statik renkler class'ta kalır.
+function heatColor(sum: number, maxAbs: number): { cls: string; bg?: string } {
+  if (!maxAbs || sum === 0) return { cls: 'bg-[#161b22] text-slate-500' };
+  const alpha = (0.15 + Math.min(1, Math.abs(sum) / maxAbs) * 0.45).toFixed(2);
+  return sum > 0
+    ? { cls: 'text-emerald-300', bg: `rgba(16,185,129,${alpha})` }
+    : { cls: 'text-rose-300', bg: `rgba(244,63,94,${alpha})` };
 }
 
 const selectCls =
@@ -277,17 +281,21 @@ export const BacktestPanel: React.FC = () => {
                 AYLIK KIRILIM (toplam ret10)
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                {months.map((m) => (
-                  <div
-                    key={m.ym}
-                    className={`rounded-lg border border-[#22272e] p-2 flex flex-col ${heatColor(m.sum, maxMonthAbs)}`}
-                    title={`${m.ym}: ${m.n} işlem, %${m.winRate.toFixed(0)} win rate`}
-                  >
-                    <span className="text-[10px] font-mono font-bold">{m.ym}</span>
-                    <span className="text-xs font-mono font-bold">{fmtPct(m.sum, 1)}</span>
-                    <span className="text-[9px] font-mono opacity-70">{m.n} işlem</span>
-                  </div>
-                ))}
+                {months.map((m) => {
+                  const hc = heatColor(m.sum, maxMonthAbs);
+                  return (
+                    <div
+                      key={m.ym}
+                      className={`rounded-lg border border-[#22272e] p-2 flex flex-col ${hc.cls}`}
+                      style={{ backgroundColor: hc.bg }}
+                      title={`${m.ym}: ${m.n} işlem, %${m.winRate.toFixed(0)} win rate`}
+                    >
+                      <span className="text-[10px] font-mono font-bold">{m.ym}</span>
+                      <span className="text-xs font-mono font-bold">{fmtPct(m.sum, 1)}</span>
+                      <span className="text-[9px] font-mono opacity-70">{m.n} işlem</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
