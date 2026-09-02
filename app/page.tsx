@@ -10,7 +10,11 @@ import { SignalCard } from '@/components/SignalCard';
 import { OrderFlowLog } from '@/components/OrderFlowLog';
 import { MarketScanner } from '@/components/MarketScanner';
 import { PatternPoolView } from '@/components/PatternPoolView';
+import { PatternRadarCard } from '@/components/PatternRadarCard';
 import { SettingsModal } from '@/components/SettingsModal';
+import { showToast } from '@/components/ui/toast';
+import { usePatternRadar } from '@/hooks/use-pattern-radar';
+import type { ScannerHit } from '@/lib/scanner-engine';
 import {
   AppSettings,
   Candle,
@@ -36,7 +40,24 @@ import {
   fetchPremiumIndex
 } from '@/lib/binance';
 import { generateCommentary } from '@/lib/commentary';
+import { fetchAICommentary, buildFlowBrief, type AICommentaryContext } from '@/lib/ai-commentary';
+import { computeFlowSnapshotCore } from '@/lib/flow-snapshot';
+import {
+  collectWalls,
+  detectAbsorption,
+  detectDeltaBurst,
+  detectSpoofRemovals,
+  detectSweep
+} from '@/lib/flow-detectors';
 import { soundEngine } from '@/lib/audio';
+import {
+  getNotifyEnabled,
+  notifyPermission,
+  pushNotify,
+  requestNotifyPermission,
+  setNotifyEnabled,
+  type NotifyPermissionState
+} from '@/lib/notifications';
 import {
   initPatternDB,
   intervalToSeconds,
@@ -49,8 +70,10 @@ import {
   patternBackfillFromCandles,
   patternRecomputeStats,
   patternId,
+  patternName,
   dbAdd,
   dbPut,
+  dbDelete,
   dbIndexGet,
   dbIndexAll,
   dbAll,
@@ -107,7 +130,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   macdColor: '#00bcd4',
   macdWidth: 1,
   macdSignalColor: '#ff7043',
-  macdSignalWidth: 1
+  macdSignalWidth: 1,
+  scanEnabled: true,
+  scanTopN: 10
 };
 
 export default function Home() {
@@ -235,6 +260,79 @@ export default function Home() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSignalOpen, setIsSignalOpen] = useState(false);
 
+  // Tarayıcı bildirimleri
+  const [notifyEnabled, setNotifyEnabledState] = useState(false);
+  const [notifyPerm, setNotifyPerm] = useState<NotifyPermissionState>('unsupported');
+
+  const handleToggleNotify = useCallback(async () => {
+    if (notifyPerm === 'unsupported') return;
+    if (!getNotifyEnabled()) {
+      const perm = await requestNotifyPermission();
+      setNotifyPerm(perm);
+      if (perm !== 'granted') {
+        showToast('Bildirim izni verilemedi — tarayıcı ayarlarından kontrol edebilirsin.', 'warning');
+        return;
+      }
+      setNotifyEnabled(true);
+      setNotifyEnabledState(true);
+      showToast('Tarayıcı bildirimleri açıldı (sinyal, radar, whale).', 'success');
+    } else {
+      setNotifyEnabled(false);
+      setNotifyEnabledState(false);
+      showToast('Tarayıcı bildirimleri kapatıldı.', 'info');
+    }
+  }, [notifyPerm]);
+
+  // Bildirim tercihini mount'ta oku (SSR-safe)
+  useEffect(() => {
+    setNotifyPerm(notifyPermission());
+    setNotifyEnabledState(getNotifyEnabled() && notifyPermission() === 'granted');
+  }, []);
+
+  // Sinyal logu kalıcılığı: mevcut sembol+TF kayıtlarını yükle
+  const signalsLoadedForRef = useRef<string>('');
+  useEffect(() => {
+    const key = `${symbol}:${interval}`;
+    if (signalsLoadedForRef.current === key) return;
+    signalsLoadedForRef.current = key;
+    let cancelled = false;
+    (async () => {
+      try {
+        await initPatternDB();
+        const all = await dbAll<SignalLogEntry>('signalLog');
+        if (cancelled) return;
+        const mine = all
+          .filter((s) => (s.symbol ?? '') === symbol && (s.timeframe ?? '') === interval)
+          .sort((a, b) => b.ts - a.ts)
+          .slice(0, 30);
+        if (mine.length) setSignals(mine);
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, interval]);
+
+  // Yeni sinyal → IndexedDB'ye yaz (200+ kayıtta budama)
+  const lastPersistedSignalIdRef = useRef<string>('');
+  useEffect(() => {
+    const s = signals[0];
+    if (!s || s.id === lastPersistedSignalIdRef.current) return;
+    lastPersistedSignalIdRef.current = s.id;
+    dbPut('signalLog', { ...s, symbol, timeframe: interval }).catch(() => {});
+    (async () => {
+      try {
+        const all = await dbAll<SignalLogEntry>('signalLog');
+        if (all.length <= 200) return;
+        const excess = [...all].sort((a, b) => a.ts - b.ts).slice(0, all.length - 200);
+        for (const e of excess) {
+          if (e.symbol === symbol && e.timeframe === interval) continue; // aktif logu budama
+          await dbDelete('signalLog', e.id);
+        }
+      } catch {}
+    })();
+  }, [signals, symbol, interval]);
+
   // Initialize DB and load saved preferences on Mount (safe from SSR hydration mismatch)
   useEffect(() => {
     initPatternDB();
@@ -302,6 +400,62 @@ export default function Home() {
       localStorage.setItem('fs_favs', JSON.stringify(nextFavs));
     } catch {}
   };
+
+  // Desen Radarı hit'i: toast + ses + sinyal loguna "RADAR" kaydı (score null → flow teyidi yok)
+  const handleRadarHit = useCallback((hit: ScannerHit) => {
+    showToast(
+      `📡 Radar: ${hit.symbol} ${hit.dir} · ${hit.timeframe} · ${patternName(hit.patternId)}`,
+      hit.dir === 'AL' ? 'success' : 'warning'
+    );
+    pushNotify(
+      {
+        title: `📡 Radar: ${hit.symbol} ${hit.dir} (${hit.timeframe})`,
+        body: patternName(hit.patternId),
+        tag: `radar-${hit.symbol}-${hit.timeframe}`
+      },
+      10000
+    );
+    if (hit.dir === 'AL') {
+      soundEngine.playBuySignal();
+    } else {
+      soundEngine.playSellSignal();
+    }
+    setSignals((prev) => [
+      {
+        id: `radar-${Date.now()}-${Math.random()}`,
+        dir: hit.dir,
+        rule: hit.rule,
+        price: hit.price,
+        ts: hit.ts,
+        score: null,
+        grade: 'RADAR',
+        reasons: [
+          `Desen Radarı: ${patternName(hit.patternId)} (${hit.timeframe})`,
+          hit.poolApproved
+            ? 'Havuz onaylı ikincil kurgu (Wilson ≥ %50, n ≥ 15)'
+            : 'Birincil kurgu (MA×MA cross + SAR flip)',
+          `SAR: ${hit.sarBucket} · Filtre: ${hit.filter} · Orderflow teyidi için sembole geç`
+        ],
+        patternId: hit.patternId
+      },
+      ...prev.slice(0, 30)
+    ]);
+  }, []);
+
+  // Desen Radarı — favoriler + top hacim, 1m/5m arka plan taraması
+  const radar = usePatternRadar({
+    enabled: settings.scanEnabled,
+    topN: settings.scanTopN,
+    tickers,
+    favs,
+    excludeSymbol: symbol,
+    ma1: settings.ma1,
+    ma2: settings.ma2,
+    ma3: settings.ma3,
+    sarStep: settings.sarStep,
+    sarMax: settings.sarMax,
+    onHit: handleRadarHit
+  });
 
   // Settle open tracking events gracefully before switching context (F2-7 & F2-8)
   const settleOpenTrackingEvents = async (cs: Candle[]) => {
@@ -527,135 +681,26 @@ export default function Home() {
     return () => clearInterval(id);
   }, [symbol, settings.oiPollSec]);
 
-  // 4. Compute Flow Snapshot Helper
+  // 4. Compute Flow Snapshot Helper (saf çekirdek lib/flow-snapshot.ts içinde test ediliyor)
   const computeFlowSnapshot = useCallback((): FlowSnapshot => {
-    const now = Date.now();
-    const recentTrades = tradesRef.current;
-    const recentLiqs = liqsRef.current;
-    const currPrice = lastPriceRef.current;
     const currSettings = settingsRef.current;
-    const currCandles = candlesRef.current;
-    const currBids = bidsBookRef.current;
-    const currAsks = asksBookRef.current;
-
-    // 60s CVD & notional
-    let cvd60 = 0;
-    let notional60 = 0;
-    let cvdPrev = 0;
-    let notionalPrev = 0;
-    let taker30 = 0;
-
-    for (let i = recentTrades.length - 1; i >= 0; i--) {
-      const t = recentTrades[i];
-      const age = now - t.ts;
-      if (age <= 30000) taker30 += t.notional;
-      if (age <= 60000) {
-        cvd60 += t.delta;
-        notional60 += t.notional;
-      } else if (age <= 180000) {
-        cvdPrev += t.delta;
-        notionalPrev += t.notional;
-      }
-    }
-
-    const cvdBias = notional60 > 0 ? cvd60 / notional60 : 0;
-    const prevBias = notionalPrev > 0 ? cvdPrev / notionalPrev : 0;
-    const cvdSlope = cvdBias - prevBias;
-
-    // Liquidations 60s
-    let longLiq60 = 0;
-    let shortLiq60 = 0;
-    for (let i = recentLiqs.length - 1; i >= 0; i--) {
-      const l = recentLiqs[i];
-      if (now - l.ts <= 60000) {
-        if (l.type === 'LONG_LIQ') longLiq60 += l.notional;
-        else shortLiq60 += l.notional;
-      }
-    }
-
-    // OBI (Order Book Imbalance within 1% band)
-    let bestBid = 0;
-    let bestAsk = Infinity;
-    currBids.forEach((_, p) => {
-      if (p > bestBid) bestBid = p;
-    });
-    currAsks.forEach((_, p) => {
-      if (p < bestAsk) bestAsk = p;
-    });
-    if (!Number.isFinite(bestAsk)) bestAsk = 0;
-
-    const spread = bestAsk > bestBid && bestBid > 0 ? bestAsk - bestBid : 0;
-    const mid = (bestBid + bestAsk) / 2 || currPrice;
-    const lo = mid * 0.99;
-    const hi = mid * 1.01;
-
-    let bidVol = 0;
-    let askVol = 0;
-    currBids.forEach((q, p) => {
-      if (p >= lo) bidVol += p * q;
-    });
-    currAsks.forEach((q, p) => {
-      if (p <= hi) askVol += p * q;
-    });
-
-    const obi = bidVol + askVol > 0 ? (bidVol - askVol) / (bidVol + askVol) : 0;
-
-    // OI Delta %
-    const prevOiVal = prevOiRef.current;
-    const oiChangePct = prevOiVal && openInterest ? ((openInterest - prevOiVal) / prevOiVal) * 100 : 0;
-
-    // Range & ATR
-    const win = currCandles.slice(-20);
-    const hiP = Math.max(...win.map((c) => c.high), 1);
-    const loP = Math.min(...win.map((c) => c.low), 1);
-    const rangePct = currPrice > 0 ? (hiP - loP) / currPrice : 0;
-    const atrPct =
-      win.length > 0 ? win.reduce((a, c) => a + (c.high - c.low) / (c.close || 1), 0) / win.length : 0;
-    const tightRange = rangePct > 0 && (rangePct < 0.006 || atrPct < 0.0012);
-
-    const base5 = currCandles[Math.max(0, currCandles.length - 6)]?.close || currPrice;
-    const change5 = base5 > 0 ? (currPrice - base5) / base5 : 0;
-    const cascadeThr = (currSettings.cascadePct || 0.8) / 100;
-
-    // Wall counts
-    let wallBid = 0;
-    let wallAsk = 0;
-    const wallMin = (currSettings.whaleMin || 300000) * 0.7;
-    currBids.forEach((q, p) => {
-      if (p * q >= wallMin) wallBid++;
-    });
-    currAsks.forEach((q, p) => {
-      if (p * q >= wallMin) wallAsk++;
-    });
-
-    return {
-      cvd60,
-      notional60,
-      cvdBias,
-      cvdSlope,
-      obi,
-      bidVol,
-      askVol,
-      longLiq60,
-      shortLiq60,
+    return computeFlowSnapshotCore({
+      now: Date.now(),
+      trades: tradesRef.current,
+      liquidations: liqsRef.current,
+      candles: candlesRef.current,
+      bids: bidsBookRef.current,
+      asks: asksBookRef.current,
+      lastPrice: lastPriceRef.current,
       oi: openInterest,
-      oiChangePct,
+      oiPrev: prevOiRef.current,
       funding: fundingRate,
       markPrice,
       nextFunding: nextFundingTime,
-      bestBid,
-      bestAsk,
-      spread,
-      taker30,
-      takerSpike: taker30 > (notionalPrev / 4) * 1.8 && taker30 > 25000,
-      rangePct,
-      atrPct,
-      tightRange,
-      change5,
-      cascadeDown: change5 < -cascadeThr || longLiq60 > (currSettings.liqMin || 50000) * 2,
-      cascadeUp: change5 > cascadeThr || shortLiq60 > (currSettings.liqMin || 50000) * 2,
-      wallCount: { bid: wallBid, ask: wallAsk }
-    };
+      cascadePct: currSettings.cascadePct || 0.8,
+      whaleMin: currSettings.whaleMin || 300000,
+      liqMin: currSettings.liqMin || 50000
+    });
   }, [fundingRate, markPrice, nextFundingTime, openInterest]);
 
   // 5. Evaluate Raw Flow Scoring (Katman 2) & Pattern Pool Multi-Confluence (F1-4, F2-1)
@@ -875,6 +920,50 @@ export default function Home() {
     [computeFlowSnapshot, flowEvents]
   );
 
+  // AI Yorum Katmanı: anında yerel fallback yaz, Gemini yanıtı gelirse yükselt.
+  // fetchAICommentary cooldown + önbellek + sessiz fallback içerir; AI kapalıysa hiç hissedilmez.
+  const publishSignalCommentary = useCallback(
+    (dir: 'AL' | 'SAT', evalRes: DecisionEvaluation, stats: PatternStats | null, patId: string | null) => {
+      const fallback = generateCommentary(dir, evalRes);
+      setCommentary(fallback);
+
+      const aiCtx: AICommentaryContext = {
+        symbol,
+        timeframe: interval,
+        dir,
+        score: evalRes.score,
+        grade: evalRes.grade,
+        reasons: evalRes.reasons.slice(0, 12),
+        brief: buildFlowBrief(evalRes.metrics),
+        pattern: stats
+          ? {
+              id: stats.patternId,
+              name: patternName(stats.patternId),
+              n: stats.n,
+              winRate: stats.winRate,
+              wilsonLower: stats.wilsonLower,
+              avgMfe20: stats.avgMfe20,
+              avgMae20: stats.avgMae20
+            }
+          : null
+      };
+      if (patId) setActivePatternId(patId);
+
+      // Tarayıcı bildirimi (kapalıysa no-op; sekme arka plandayken özellikle değerli)
+      pushNotify(
+        { title: `📈 ${dir} Sinyali — ${symbol} (${interval})`, body: `${evalRes.grade} güven · ${symbol} @ ${evalRes.metrics.bestBid || '—'}`, tag: `signal-${symbol}` },
+        4000
+      );
+
+      fetchAICommentary(aiCtx)
+        .then((ai) => {
+          if (ai) setCommentary(ai);
+        })
+        .catch(() => {});
+    },
+    [symbol, interval]
+  );
+
   // 6. Signal Trigger Engine (Katman 1 MA/SAR) + Live Pattern Pool Engine
   const runSignalEngine = useCallback(
     async (cs: Candle[]) => {
@@ -995,8 +1084,8 @@ export default function Home() {
               setStatusRule(rule);
               setEvaluation(evalRes);
 
-              const comment = generateCommentary(p.dir, evalRes);
-              setCommentary(comment);
+              // AI Yorum Katmanı: fallback anında, Gemini yanıtı gelirse yükseltir
+              publishSignalCommentary(p.dir, evalRes, stats, patKey);
 
               // Record Live Pattern Event to DB (Avoid duplicate writes within 3 candles) (F2-6)
               const intervalSec = intervalToSeconds(interval);
@@ -1096,9 +1185,9 @@ export default function Home() {
               setStatus(secDir);
               setStatusRule(rule);
               setEvaluation(evalRes);
-              setActivePatternId(secPatKey);
               setActivePatternStats(secStats);
-              setCommentary(generateCommentary(secDir, evalRes));
+              // AI Yorum Katmanı (ikincil sinyal): setActivePatternId publishSignalCommentary içinde yapılır
+              publishSignalCommentary(secDir, evalRes, secStats, secPatKey);
 
               setSignals((prev) => [
                 {
@@ -1126,8 +1215,15 @@ export default function Home() {
         }
       }
     },
-    [evaluateRawFlow, interval, symbol]
+    [evaluateRawFlow, interval, symbol, publishSignalCommentary]
   );
+
+  // WS FIX: runSignalEngine her flowEvents guncellemesinde yeni identity aliyordu ve buna bagli
+  // WebSocket client'i tekrar tekrar kurup yikiyordu (reconnect storm). Ref arkasindan cagir.
+  const runSignalEngineRef = useRef(runSignalEngine);
+  useEffect(() => {
+    runSignalEngineRef.current = runSignalEngine;
+  }, [runSignalEngine]);
 
   const handleReconnect = useCallback(() => {
     if (clientRef.current) {
@@ -1155,8 +1251,8 @@ export default function Home() {
         });
 
         if (isClosed) {
-          // Trigger signal engine on closed candle
-          runSignalEngine(candlesRef.current);
+          // Trigger signal engine on closed candle (ref: bagimlilik zincirinden ayristirildi)
+          runSignalEngineRef.current(candlesRef.current);
         }
       },
       onTrade: (trade) => {
@@ -1173,6 +1269,12 @@ export default function Home() {
         if (trade.notional >= whaleMin && now - lastWhaleRef.current > 2000) {
           lastWhaleRef.current = now;
           soundEngine.playWhale();
+          if (trade.notional >= whaleMin * 2) {
+            pushNotify(
+              { title: `🐋 Whale ${trade.side.toUpperCase()} — $${(trade.notional / 1000).toFixed(0)}k`, body: `${symbol} @ $${trade.price}`, tag: `whale-${symbol}` },
+              15000
+            );
+          }
           const ev: FlowEvent = {
             id: `${now}-${Math.random()}`,
             type: 'WHALE',
@@ -1184,80 +1286,56 @@ export default function Home() {
           setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
         }
 
-        // 2. Sweep Detector (>=4 trades on same side in <1.8s totaling > whaleMin * 1.5)
+        // 2. Sweep Detector (saf çekirdek lib/flow-detectors.ts)
         if (now - lastSweepRef.current > 4000) {
-          const recent = tradesRef.current.filter((t) => now - t.ts < 1800);
-          ['buy', 'sell'].forEach((side) => {
-            const sameSide = recent.filter((t) => t.side === side);
-            const total = sameSide.reduce((a, b) => a + b.notional, 0);
-            if (total > whaleMin * 1.5 && sameSide.length >= 4) {
-              lastSweepRef.current = now;
-              soundEngine.playWhale();
-              const ev: FlowEvent = {
-                id: `${now}-${Math.random()}`,
-                type: 'SWEEP',
-                sev: 'high',
-                text: `SWEEP ${side.toUpperCase()} $${(total / 1000).toFixed(0)}k (${sameSide.length} işlem)`,
-                ts: now,
-                side: side as 'buy' | 'sell'
-              };
-              setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
-            }
-          });
-        }
-
-        // 3. Delta Burst Detector (rapid CVD surge in <5s confirmed by 1-min cumulative cvdSlope) (F1-4)
-        if (now - lastBurstRef.current > 8000) {
-          const recent5s = tradesRef.current.filter((t) => now - t.ts < 5000);
-          const cvd5s = recent5s.reduce((a, b) => a + b.delta, 0);
-          const vol5s = recent5s.reduce((a, b) => a + b.notional, 0);
-          if (vol5s > whaleMin * 1.8 && Math.abs(cvd5s) / vol5s > 0.75) {
-            // Check 60s slope direction alignment
-            const recent60s = tradesRef.current.filter((t) => now - t.ts < 60000);
-            const cvd60s = recent60s.reduce((a, b) => a + b.delta, 0);
-            const slopeAligned = (cvd5s > 0 && cvd60s >= 0) || (cvd5s < 0 && cvd60s <= 0);
-            
-            if (slopeAligned) {
-              lastBurstRef.current = now;
-              soundEngine.playWhale();
-              const side = cvd5s > 0 ? 'buy' : 'sell';
-              const ev: FlowEvent = {
-                id: `${now}-${Math.random()}`,
-                type: 'DELTA_BURST',
-                sev: 'high',
-                text: `DELTA BURST ${side.toUpperCase()} CVD: $${(cvd5s / 1000).toFixed(0)}k (Hacim: $${(vol5s / 1000).toFixed(0)}k, 1D Eğim Onaylı)`,
-                ts: now,
-                side
-              };
-              setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
-            }
+          const sweep = detectSweep(tradesRef.current, now, whaleMin);
+          if (sweep) {
+            lastSweepRef.current = now;
+            soundEngine.playWhale();
+            const ev: FlowEvent = {
+              id: `${now}-${Math.random()}`,
+              type: 'SWEEP',
+              sev: 'high',
+              text: `SWEEP ${sweep.side.toUpperCase()} $${(sweep.total / 1000).toFixed(0)}k (${sweep.count} işlem)`,
+              ts: now,
+              side: sweep.side
+            };
+            setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
           }
         }
 
-        // 4. Absorption Detector (High volume/CVD with minimal price movement < 0.08%)
-        if (now - lastAbsorbRef.current > 6000) {
-          const recent8s = tradesRef.current.filter((t) => now - t.ts < 8000);
-          if (recent8s.length >= 10) {
-            const vol8s = recent8s.reduce((a, b) => a + b.notional, 0);
-            const cvd8s = recent8s.reduce((a, b) => a + b.delta, 0);
-            const prices = recent8s.map((t) => t.price);
-            const minP = Math.min(...prices);
-            const maxP = Math.max(...prices);
-            const spreadPct = minP > 0 ? (maxP - minP) / minP : 0;
+        // 3. Delta Burst Detector (saf çekirdek lib/flow-detectors.ts)
+        if (now - lastBurstRef.current > 8000) {
+          const burst = detectDeltaBurst(tradesRef.current, now, whaleMin);
+          if (burst) {
+            lastBurstRef.current = now;
+            soundEngine.playWhale();
+            const ev: FlowEvent = {
+              id: `${now}-${Math.random()}`,
+              type: 'DELTA_BURST',
+              sev: 'high',
+              text: `DELTA BURST ${burst.side.toUpperCase()} CVD: $${(burst.cvd / 1000).toFixed(0)}k (Hacim: $${(burst.vol / 1000).toFixed(0)}k, 1D Eğim Onaylı)`,
+              ts: now,
+              side: burst.side
+            };
+            setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
+          }
+        }
 
-            if (vol8s > whaleMin * 2.2 && Math.abs(cvd8s) > whaleMin * 0.8 && spreadPct < 0.0008) {
-              lastAbsorbRef.current = now;
-              const absorbSide = cvd8s > 0 ? 'sell' : 'buy'; // If buyers are aggressive but price won't rise, passive sellers absorb
-              const ev: FlowEvent = {
-                id: `${now}-${Math.random()}`,
-                type: 'ABSORPTION',
-                sev: 'high',
-                text: `ABSORPTION: Pasif ${absorbSide.toUpperCase()} Duvarı $${(vol8s / 1000).toFixed(0)}k emdi (Fiyat kayması <%0.08)`,
-                ts: now,
-                side: absorbSide
-              };
-              setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
-            }
+        // 4. Absorption Detector (saf çekirdek lib/flow-detectors.ts)
+        if (now - lastAbsorbRef.current > 6000) {
+          const absorb = detectAbsorption(tradesRef.current, now, whaleMin);
+          if (absorb) {
+            lastAbsorbRef.current = now;
+            const ev: FlowEvent = {
+              id: `${now}-${Math.random()}`,
+              type: 'ABSORPTION',
+              sev: 'high',
+              text: `ABSORPTION: Pasif ${absorb.side.toUpperCase()} Duvarı $${(absorb.vol / 1000).toFixed(0)}k emdi (Fiyat kayması <%0.08)`,
+              ts: now,
+              side: absorb.side
+            };
+            setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
           }
         }
       },
@@ -1276,6 +1354,12 @@ export default function Home() {
 
         if (liq.notional >= (settingsRef.current.liqMin || 50000)) {
           soundEngine.playLiquidation();
+          if (liq.notional >= (settingsRef.current.liqMin || 50000) * 3) {
+            pushNotify(
+              { title: `💥 Büyük Likidasyon — ${liq.side === 'SELL' ? 'LONG' : 'SHORT'} $${(liq.notional / 1000).toFixed(0)}k`, body: `${symbol} @ $${liq.price}`, tag: `liq-${symbol}` },
+              12000
+            );
+          }
           const ev: FlowEvent = {
             id: `${liq.ts}-${Math.random()}`,
             type: 'LIQUIDATION',
@@ -1300,33 +1384,19 @@ export default function Home() {
 
         const whaleMin = settingsRef.current.whaleMin || 300000;
 
-        // Spoofing Detector: Check if massive wall disappeared without significant trade volume
-        const currentWalls = new Map<number, { notional: number; ts: number; side: 'B' | 'A' }>();
-        depth.bids.forEach((q, p) => {
-          const n = p * q;
-          if (n >= whaleMin) currentWalls.set(p, { notional: n, ts: now, side: 'B' });
-        });
-        depth.asks.forEach((q, p) => {
-          const n = p * q;
-          if (n >= whaleMin) currentWalls.set(p, { notional: n, ts: now, side: 'A' });
-        });
-
-        prevWallsRef.current.forEach((prevWall, price) => {
-          if (!currentWalls.has(price)) {
-            // Wall was removed; check lifetime
-            const age = now - prevWall.ts;
-            if (age < 4000 && prevWall.notional >= whaleMin * 1.5) {
-              const ev: FlowEvent = {
-                id: `${now}-${Math.random()}`,
-                type: 'SPOOF',
-                sev: 'medium',
-                text: `SPOOF Wall İptal: $${(prevWall.notional / 1000).toFixed(0)}k ${prevWall.side === 'B' ? 'BID' : 'ASK'} @ $${price} (${(age / 1000).toFixed(1)}s)`,
-                ts: now,
-                side: prevWall.side === 'B' ? 'buy' : 'sell'
-              };
-              setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
-            }
-          }
+        // Spoofing Detector (saf çekirdek lib/flow-detectors.ts)
+        const currentWalls = collectWalls(depth.bids, depth.asks, whaleMin, now);
+        const spoofs = detectSpoofRemovals(prevWallsRef.current, currentWalls, now, whaleMin);
+        spoofs.forEach((s) => {
+          const ev: FlowEvent = {
+            id: `${now}-${Math.random()}`,
+            type: 'SPOOF',
+            sev: 'medium',
+            text: `SPOOF Wall İptal: $${(s.notional / 1000).toFixed(0)}k ${s.side === 'B' ? 'BID' : 'ASK'} @ $${s.price} (${(s.ageMs / 1000).toFixed(1)}s)`,
+            ts: now,
+            side: s.side === 'B' ? 'buy' : 'sell'
+          };
+          setFlowEvents((prev) => [ev, ...prev.slice(0, 30)]);
         });
         prevWallsRef.current = currentWalls;
 
@@ -1389,7 +1459,7 @@ export default function Home() {
       client.stop();
       clientRef.current = null;
     };
-  }, [symbol, interval, runSignalEngine]);
+  }, [symbol, interval]);
 
   // Periodic flow snapshot calculation
   useEffect(() => {
@@ -1420,6 +1490,9 @@ export default function Home() {
           depthConnected={depthConnected}
           wsMessage={wsMessage}
           onReconnect={handleReconnect}
+          notifyEnabled={notifyEnabled}
+          notifyPermissionState={notifyPerm}
+          onToggleNotify={handleToggleNotify}
         />
       )}
 
@@ -1529,16 +1602,29 @@ export default function Home() {
         )}
 
         {activeView === 'scanner' && (
-          <MarketScanner
-            tickers={tickers}
-            favs={favs}
-            onToggleFav={handleToggleFav}
-            onSelectSymbol={(sym) => {
-              handleSelectSymbol(sym);
-              setActiveView('chart');
-            }}
-            selectedSymbol={symbol}
-          />
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="shrink-0 px-2.5 sm:px-4 pt-2.5 sm:pt-4">
+              <PatternRadarCard
+                radar={radar}
+                enabled={settings.scanEnabled}
+                onToggle={(next) => handleUpdateSingleSetting('scanEnabled', next)}
+                onSelectSymbol={(sym) => {
+                  handleSelectSymbol(sym);
+                  setActiveView('chart');
+                }}
+              />
+            </div>
+            <MarketScanner
+              tickers={tickers}
+              favs={favs}
+              onToggleFav={handleToggleFav}
+              onSelectSymbol={(sym) => {
+                handleSelectSymbol(sym);
+                setActiveView('chart');
+              }}
+              selectedSymbol={symbol}
+            />
+          </div>
         )}
 
         {activeView === 'pool' && (
