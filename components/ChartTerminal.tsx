@@ -171,33 +171,25 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   // Overlay Canvases
   const heatmapCanvasRef = useRef<HTMLCanvasElement>(null);
   // Likidite overlay legend'i (kapatilabilir; tercih localStorage'da)
-  const [legendOpen, setLegendOpen] = useState(true);
-  // Tam ekran chrome overlay (madde 1): bantlar grafikten düşer, ☰ ile overlay açılır
-  const [fsChromeOpen, setFsChromeOpen] = useState(false);
-  // Lejant gerçek yüksekliği (madde 2): OHLC satırı sabit top-N yerine bununla hizalanır
-  const legendRef = useRef<HTMLDivElement>(null);
-  const [legendH, setLegendH] = useState(22);
-  // Pill satırı kaydırma göstergesi (madde 3)
-  const pillsRef = useRef<HTMLDivElement>(null);
+  // Pill satırı kaydırma göstergesi
   const [pillsAtEnd, setPillsAtEnd] = useState(false);
+  const pillsRef = useRef<HTMLDivElement>(null);
+  const lastTopSignalIdRef = useRef<string | null>(null);
+  // Duvar tekeri (alt bant): drawOverlays içinden beslenir
+  const [wallTicker, setWallTicker] = useState<string[]>([]);
+  const wallTickerRef = useRef('');
   const [fsSymOpen, setFsSymOpen] = useState(false);
   // Zaman ekseni rotuşları: crosshair mum okuma satırı + mum kapanış geri sayımı
   const [hoverBar, setHoverBar] = useState<{ time: number; o: number; h: number; l: number; c: number; vol?: number } | null>(null);
   // Dopamin tetikleyici 1: yeni AL/SAT sinyalinde glow-up/glow-down (halo halkasi + kenar flasi)
-  const [pulse, setPulse] = useState<{ x: number; y: number; dir: 'AL' | 'SAT'; key: number } | null>(null);
-  const lastTopSignalIdRef = useRef<string | null>(null);
+  const pulseCanvasRef = useRef<{ x: number; y: number; dir: 'AL' | 'SAT'; ts: number } | null>(null);
+  const pulseRedrawRef = useRef(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const lastCandleRef = useRef<Candle | null>(null);
   lastCandleRef.current = candles.length ? candles[candles.length - 1] : null;
   // Android geri tusu: sembol aramayi kapatir (tam ekrandan once)
   useAndroidBack(fsSymOpen, () => setFsSymOpen(false));
-  useAndroidBack(fsChromeOpen, () => setFsChromeOpen(false));
   const [fsQuery, setFsQuery] = useState('');
-  useEffect(() => {
-    try {
-      setLegendOpen(localStorage.getItem('fs_legend_closed') !== 'true');
-    } catch {}
-  }, []);
 
   const domOverlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -573,43 +565,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     };
   }, [symbol, interval, settings.haptics]);
 
-  // Sinyal glow: signals[0] degisince (mount/restore degil) sinyal barinin piksel
-  // konumunda halo tetikle; 1.6sn sonra kendini temizler.
-  useEffect(() => {
-    const top = signals[0];
-    if (!top) {
-      lastTopSignalIdRef.current = null;
-      return;
-    }
-    if (lastTopSignalIdRef.current === top.id) return;
-    const first = lastTopSignalIdRef.current === null;
-    lastTopSignalIdRef.current = top.id;
-    if (first) return; // ilk render / DB restore — eski sinyal icin yanip sonme
-    const chart = chartRef.current;
-    const s = candleSeriesRef.current;
-    if (!chart || !s) return;
-    const x = chart.timeScale().timeToCoordinate(top.ts as Time);
-    const y = s.priceToCoordinate(top.price);
-    if (x === null || y === null) return;
-    setPulse({ x, y, dir: top.dir, key: Date.now() });
-  }, [signals]);
 
-  useEffect(() => {
-    if (!pulse) return;
-    const t = window.setTimeout(() => setPulse(null), 1600);
-    return () => window.clearTimeout(t);
-  }, [pulse]);
 
-  // Lejant yuksekligi olc (icerik dar ekranda kirilip buyuse de OHLC dinamik hizalanir)
-  useEffect(() => {
-    if (!legendOpen) return;
-    const el = legendRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setLegendH(el.offsetHeight));
-    ro.observe(el);
-    setLegendH(el.offsetHeight);
-    return () => ro.disconnect();
-  }, [legendOpen]);
 
   // Pill satiri kaydirma durumu (▸ ipucu)
   useEffect(() => {
@@ -797,12 +754,12 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   // Markers: Signals + Liquidations + Whale Events (Separate effect - updates on events, not every tick)
   // P1.5: overlay cizimlerinde "yuklu mum araliginda mi" kontrolu icin ilk bar zamani (her tick degismez)
   const firstBarTime = candles.length ? candles[0].time : null;
+    const tfSec = intervalToSeconds(interval);
 
   useEffect(() => {
     if (!chartRef.current || !candleSeriesRef.current) return;
 
     const markers: SeriesMarker<Time>[] = [];
-    const tfSec = intervalToSeconds(interval);
 
     // Signals
     signals.forEach((s) => {
@@ -814,76 +771,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         text: `${s.dir} ${s.score ? `${s.score}` : ''}`
       });
     });
-
-    // Liquidations
-    if (settings.showLiq) {
-      liquidations.slice(-20).forEach((liq) => {
-        markers.push({
-          time: snapToBarTime(liq.ts, tfSec) as Time,
-          position: liq.side === 'BUY' ? 'belowBar' : 'aboveBar',
-          color: liq.side === 'BUY' ? '#ef5350' : '#26a69a',
-          shape: 'circle',
-          text: `⚡${(liq.notional / 1e3).toFixed(0)}k`
-        });
-      });
-    }
-
-    // Whale / Flow Events (WHALE, SWEEP, DELTA_BURST, ABSORPTION) + SPOOF (birleşik marker)
-    if (settings.whaleAlerts) {
-      flowEvents
-        .filter((e) => e.type === 'WHALE' || e.type === 'SWEEP' || e.type === 'DELTA_BURST' || e.type === 'ABSORPTION')
-        .slice(-15)
-        .forEach((w) => {
-          const isBuy = w.side === 'buy';
-          markers.push({
-            time: snapToBarTime(w.ts, tfSec) as Time,
-            position: isBuy ? 'belowBar' : 'aboveBar',
-            color:
-              w.type === 'ABSORPTION'
-                ? '#06b6d4'
-                : w.type === 'DELTA_BURST'
-                  ? '#a855f7'
-                  : isBuy
-                    ? '#10b981'
-                    : '#f59e0b',
-            shape: 'square',
-            text:
-              w.type === 'ABSORPTION'
-                ? '🛡️ABSORB'
-                : w.type === 'DELTA_BURST'
-                  ? '💥BURST'
-                  : `🐋${w.type}`
-          });
-        });
-
-      // SPOOF spam fix: ayni bara dusen eventler tek marker'da birlesir (xN sayaci),
-      // 3 barlik pencerede en fazla 1 marker, metin sadece '👻' ('SPOOF' kelimesi yok).
-      const spoofByBar = new Map<number, { buys: number; sells: number }>();
-      flowEvents
-        .filter((e) => e.type === 'SPOOF')
-        .forEach((e) => {
-          const bt = snapToBarTime(e.ts, tfSec);
-          const cur = spoofByBar.get(bt) || { buys: 0, sells: 0 };
-          if (e.side === 'buy') cur.buys++;
-          else cur.sells++;
-          spoofByBar.set(bt, cur);
-        });
-      let lastKeptSpoofBar = Infinity;
-      [...spoofByBar.entries()]
-        .sort((a, b) => b[0] - a[0]) // yeni -> eski
-        .forEach(([bt, agg]) => {
-          if (lastKeptSpoofBar - bt < 3 * tfSec) return; // son 3 bar icinde maks 1 SPOOF marker
-          lastKeptSpoofBar = bt;
-          const n = agg.buys + agg.sells;
-          markers.push({
-            time: bt as Time,
-            position: agg.sells >= agg.buys ? 'aboveBar' : 'belowBar',
-            color: '#ec4899',
-            shape: 'circle',
-            text: n > 1 ? `👻×${n}` : '👻'
-          });
-        });
-    }
 
     // P1.5: Pattern overlay markerlari (giris / MFE / MAE)
     if (patternOverlay && patternOverlay.events.length) {
@@ -937,6 +824,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   }, [
     signals,
     liquidations,
+    tfSec,
     flowEvents,
     interval,
     settings.showLiq,
@@ -1195,50 +1083,12 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
             // Duvarlar: merge + fiyat-bazli yas takibi (peak/decay, PREDATOR wallAges)
             const walls = mergeWalls(bidBins, askBins, { threshold, maxNotional, binPx: BIN_PX });
+            const ticker: { price: number; side: 'B' | 'A'; notional: number; est: boolean }[] = [];
             const now = Date.now();
             const activeKeys = new Set<string>();
             const rayStart = Math.max(0, chartRight - ladderWidth - rayZone);
             const wallRecs = new Map<LiquidityWall, WallAgeRecord>();
 
-            // PREDATOR port'u (3/4) — placeLabelY koordinatörü: tüm canvas etiketleri tek
-            // noktadan yerleşir. Blokeli bölgeler: üst sabit UI (legend/tam ekran sembol
-            // seçici), canlı mid fiyat, alt bölge ve native marker'lı barlar (dünkü
-            // 12px-shift hack'inin genel hali — etiket x-bandına düşen markerlar).
-            const blockedZones: [number, number][] = [[0, isFullscreen ? 58 : 36], [height - 64, height]];
-            if (flowSnapshot.bestBid && flowSnapshot.bestAsk) {
-              const bbY = series.priceToCoordinate(flowSnapshot.bestBid);
-              const baY = series.priceToCoordinate(flowSnapshot.bestAsk);
-              if (bbY !== null && baY !== null) {
-                const midY = (bbY + baY) / 2;
-                blockedZones.push([midY - 12, midY + 14]);
-              }
-            }
-            {
-              const tfSecL = intervalToSeconds(interval);
-              const candleByTime = new Map(candles.map((c) => [c.time, c] as const));
-              const mtimes: number[] = [];
-              if (settings.showLiq) liquidations.slice(-20).forEach((l) => mtimes.push(snapToBarTime(l.ts, tfSecL)));
-              if (settings.whaleAlerts) flowEvents.slice(-15).forEach((e) => mtimes.push(snapToBarTime(e.ts, tfSecL)));
-              signals.forEach((s) => mtimes.push(s.ts));
-              const tsc = chart.timeScale();
-              for (const t of mtimes) {
-                const x = tsc.timeToCoordinate(t as Time);
-                const c = candleByTime.get(t);
-                const y = c ? series.priceToCoordinate(c.close) : null;
-                if (x !== null && y !== null && x >= rayStart - 24 && x <= chartRight) blockedZones.push([y - 12, y + 12]);
-              }
-            }
-            const placeLabelY = (base: number, takenList: number[]): number | null => {
-              let y = Math.max(10, Math.min(height - 6, base + 3));
-              for (let step = 0; step < 7; step++) {
-                const cand = y + step * 12;
-                const hit =
-                  takenList.some((v) => Math.abs(v - cand) < 12) ||
-                  blockedZones.some(([a, b]) => cand >= a && cand <= b);
-                if (!hit && cand < height - 8) return cand;
-              }
-              return null; // yer yok → etiket hiç çizilmez (PREDATOR davranışı)
-            };
             for (const wall of walls) {
               const price = rowPrice[Math.round(wall.y / BIN_PX)] || rowPrice[wall.start] || 0;
               const key = wallAgeKey(symbol, price, wall.side, symbolInfo?.tickSize || 0);
@@ -1266,43 +1116,23 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               ctx.stroke();
 
               wallRecs.set(wall, rec);
+              ticker.push({ price, side: wall.side, notional: wall.notional, est: isEstablished });
             }
-            // PREDATOR etiket seçimi: notional × (1 + dakika yaşı, tavan 3x) sıralı,
-            // maks 10 etiket; sağa hizalı pill, ölçüm genişliği sığmıyorsa çizilmez.
-            const labelX = chartRight - ladderWidth - 8;
-            const taken: number[] = [];
-            walls
-              .slice()
-              .sort((a, b) => {
-                const ageMin = (w: LiquidityWall) => {
-                  const r = wallRecs.get(w);
-                  return r ? Math.min(3, (now - r.first) / 60000) : 0;
-                };
-                return b.notional * (1 + ageMin(b)) - a.notional * (1 + ageMin(a));
-              })
-              .slice(0, isNarrowLadder ? 6 : 10)
-              .forEach((wall) => {
-                const rec = wallRecs.get(wall);
-                if (!rec) return;
-                if (taken.some((y) => Math.abs(y - wall.y) < 12)) return;
-                const established = now - rec.first >= WALL_ESTABLISHED_MS;
-                const rgb = wall.side === 'B' ? '38, 166, 154' : '239, 83, 80';
-                const label =
-                  (wall.notional >= 1e6 ? `$${(wall.notional / 1e6).toFixed(1)}M` : `$${(wall.notional / 1e3).toFixed(0)}k`) +
-                  (established ? ' ⏱' : '');
-                ctx.font = (established ? 'bold ' : '') + `${isNarrowLadder ? 10 : 11}px monospace`;
-                ctx.textAlign = 'right';
-                const tw = ctx.measureText(label).width;
-                const placed = placeLabelY(wall.y, taken);
-                if (placed === null || tw + 8 > labelX) return;
-                ctx.fillStyle = 'rgba(5,5,8,.78)';
-                ctx.fillRect(labelX - tw - 4, placed - 9, tw + 8, 12);
-                ctx.fillStyle = `rgba(${rgb},.95)`;
-                ctx.fillText(label, labelX, placed);
-                taken.push(placed);
-              });
-            ctx.textAlign = 'left';
-
+            // Alt bant tekeri: en büyük 3 duvar (etiketler canvas'ta değil bantta)
+            {
+              const top3 = ticker.slice().sort((a, b) => b.notional - a.notional).slice(0, 3);
+              const lines3 = top3.map(
+                (w) =>
+                  `DUVAR ${w.price.toLocaleString('tr-TR')} ${w.side === 'B' ? 'ALIŞ' : 'SATIŞ'} ≥P${settings.wallPct || 90} · $${(
+                    w.notional / 1e6
+                  ).toFixed(1)}M${w.est ? ' ⏱' : ''}`
+              );
+              const joined = lines3.join(' · ');
+              if (joined && joined !== wallTickerRef.current) {
+                wallTickerRef.current = joined;
+                setWallTicker(lines3);
+              }
+            }
             pruneWallAges(wallAgesRef.current, activeKeys, now);
           }
 
@@ -1433,6 +1263,33 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             }
           }
 
+          // Dopamin 1 (canvas içi): sinyal halo halkası — DOM katmanı yok
+          {
+            const pc = pulseCanvasRef.current;
+            if (pc) {
+              const ageP = Date.now() - pc.ts;
+              if (ageP < 1500) {
+                const k = 1 - ageP / 1500;
+                ctx.save();
+                ctx.strokeStyle = pc.dir === 'AL' ? `rgba(34,197,94,${(0.9 * k).toFixed(3)})` : `rgba(239,68,68,${(0.9 * k).toFixed(3)})`;
+                ctx.shadowColor = pc.dir === 'AL' ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)';
+                ctx.shadowBlur = 18 * k;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(pc.x, pc.y, 10 + (1 - k) * 46, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+                if (!pulseRedrawRef.current) {
+                  pulseRedrawRef.current = true;
+                  window.setTimeout(() => {
+                    pulseRedrawRef.current = false;
+                    drawOverlays();
+                  }, 300);
+                }
+              }
+            }
+          }
+
           // Dopamin 4 — desen buluntu bandı: overlay aktifken giriş barından 20 barlık
           // sonuç penceresine yumuşak yeşil bant; yeni tespitte 1.2sn parlaklayarak gelir.
           if (patternOverlay && patternOverlay.events.length) {
@@ -1460,7 +1317,29 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         }
       }
     });
-  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval, symbol, symbolInfo, candles, flowEvents, liquidations, isFullscreen, patternOverlay]);
+  }, [bidsBook, asksBook, heatmapFrames, settings, flowSnapshot, signals, activePatternStats, interval, symbol, symbolInfo, candles, patternOverlay]);
+
+  // Sinyal glow: signals[0] degisince (mount/restore degil) sinyal barinin piksel
+  // konumunda halo tetikle; 1.6sn sonra kendini temizler.
+  useEffect(() => {
+    const top = signals[0];
+    if (!top) {
+      lastTopSignalIdRef.current = null;
+      return;
+    }
+    if (lastTopSignalIdRef.current === top.id) return;
+    const first = lastTopSignalIdRef.current === null;
+    lastTopSignalIdRef.current = top.id;
+    if (first) return; // ilk render / DB restore — eski sinyal icin yanip sonme
+    const chart = chartRef.current;
+    const s = candleSeriesRef.current;
+    if (!chart || !s) return;
+    const x = chart.timeScale().timeToCoordinate(top.ts as Time);
+    const y = s.priceToCoordinate(top.price);
+    if (x === null || y === null) return;
+    pulseCanvasRef.current = { x, y, dir: top.dir, ts: Date.now() };
+    drawOverlays();
+  }, [signals, drawOverlays]);
 
   // Dopamin 4: overlay set edilirken (yeni tespit/kullanici acilisi) glow damgasi
   useEffect(() => {
@@ -1503,6 +1382,38 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     }
   };
 
+  // Akış rozetleri (yan sütun): likidasyon + flow olayları, yeniden eskiye
+  const flowChips = [
+    ...liquidations.slice(0, 6).map((l) => ({
+      k: `liq-${l.ts}-${l.notional}`,
+      ts: l.ts,
+      icon: '⚡',
+      txt: `${(l.notional / 1e3).toFixed(0)}k`,
+      cls: l.side === 'BUY' ? 'text-rose-400' : 'text-emerald-400',
+      tip: `Likidasyon ${l.side === 'BUY' ? 'LONG' : 'SHORT'} $${(l.notional / 1e3).toFixed(0)}k @ ${l.price}`
+    })),
+    ...flowEvents
+      .filter((e) => e.type === 'WHALE' || e.type === 'SPOOF' || e.type === 'SWEEP' || e.type === 'ABSORPTION' || e.type === 'DELTA_BURST')
+      .slice(0, 6)
+      .map((e) => ({
+        k: e.id,
+        ts: e.ts,
+        icon: e.type === 'WHALE' ? '🐋' : e.type === 'SPOOF' ? '👻' : e.type === 'SWEEP' ? '🌊' : e.type === 'ABSORPTION' ? '🛡' : '💥',
+        txt: '',
+        cls:
+          e.type === 'SPOOF'
+            ? 'text-pink-400'
+            : e.type === 'ABSORPTION'
+              ? 'text-cyan-400'
+              : e.type === 'DELTA_BURST'
+                ? 'text-purple-400'
+                : 'text-amber-400',
+        tip: e.text
+      }))
+  ]
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 9);
+
   const chromeBar = (
     <>
       {/* Timeframe & Indicator Quick Bar (Two-Row Mobile-First Design) */}
@@ -1526,22 +1437,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             ))}
           </div>
 
-          {/* Dopamin 5 — canlı veri nabzı */}
-          <div
-            className="flex items-center gap-1.5 mr-1 select-none"
-            title={wsMessage || (wsConnected ? 'Canlı veri akışı aktif' : 'Yeniden bağlanıyor…')}
-          >
-            <span className="relative flex h-2.5 w-2.5">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  wsConnected ? 'fs-live-dot' : wsMessage ? 'bg-amber-400' : 'bg-rose-500'
-                }`}
-              />
-            </span>
-            <span className={`text-[10px] font-bold hidden sm:inline ${wsConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
-              {wsConnected ? 'CANLI' : wsMessage ? 'REST' : 'OFFLINE'}
-            </span>
-          </div>
 
           {/* Mini Symbol Grid Toggle */}
           {onToggleMini && (
@@ -1738,143 +1633,22 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         isFullscreen ? 'fixed inset-0 z-50 h-[100dvh] w-full' : 'h-full'
       }`}
     >
-{isFullscreen ? (
-        fsChromeOpen && (
-          <div className="absolute top-0 left-1 right-1 z-40 mt-9 rounded-lg border border-[#22272e] bg-[#12161c]/95 backdrop-blur-sm shadow-2xl overflow-hidden">
-            {chromeBar}
-          </div>
-        )
-      ) : (
-        chromeBar
-      )}
+      {!isFullscreen && chromeBar}
 
-      {/* Main Chart Canvas Area */}
-      <div className="chart-wrap flex-1 relative min-h-0 w-full h-full overflow-hidden" ref={containerRef}>
-          {/* Crosshair OHLC + Zaman okuma satiri (imlec yoksa son mum) */}
-          {(hoverBar ?? (lastCandleRef.current
-            ? {
-                time: lastCandleRef.current.time,
-                o: lastCandleRef.current.open,
-                h: lastCandleRef.current.high,
-                l: lastCandleRef.current.low,
-                c: lastCandleRef.current.close,
-                vol: lastCandleRef.current.volume
-              }
-            : null)) && (() => {
-            const b = hoverBar ?? {
-              time: lastCandleRef.current!.time,
-              o: lastCandleRef.current!.open,
-              h: lastCandleRef.current!.high,
-              l: lastCandleRef.current!.low,
-              c: lastCandleRef.current!.close,
-              vol: lastCandleRef.current!.volume
-            };
-            const up = b.c >= b.o;
-            const chg = b.o ? ((b.c - b.o) / b.o) * 100 : 0;
-            const volTxt = b.vol != null ? new Intl.NumberFormat('tr-TR', { notation: 'compact' }).format(b.vol) : '—';
-            return (
-              <div
-                className="absolute left-2 z-30 pointer-events-none select-none bg-[#0d1117]/80 backdrop-blur-sm border border-[#22272e] rounded-md px-2 py-1 text-[10px] font-mono flex flex-wrap items-center gap-x-2 gap-y-0.5 max-w-[92%]"
-                style={{ top: (legendOpen ? (isFullscreen ? 48 : 8) + legendH + 6 : isFullscreen ? 48 : 8) }}
-              >
-                <span className="text-slate-400">
-                  {new Date(b.time * 1000).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                </span>
-                <span className="text-slate-500">O <span className="text-slate-300">{b.o}</span></span>
-                <span className="text-slate-500">H <span className="text-slate-300">{b.h}</span></span>
-                <span className="text-slate-500">L <span className="text-slate-300">{b.l}</span></span>
-                <span className={up ? 'text-emerald-400' : 'text-rose-400'}>
-                  C {b.c} ({up ? '+' : ''}{chg.toFixed(2)}%)
-                </span>
-                <span className="text-slate-500">V <span className="text-slate-300">{volTxt}</span></span>
-                {countdown !== null && (
-                  <span className={`sm:hidden font-bold ${countdown <= 10 ? 'text-amber-400' : 'text-slate-400'}`}>
-                    ⏱ {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
-                  </span>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Dopamin 1: sinyal glow-up/glow-down — halo halkasi + kenar flasi */}
-          {pulse && (
-            <>
-              <div
-                key={pulse.key}
-                className="fs-signal-ring pointer-events-none absolute z-30 rounded-full"
-                style={{
-                  left: `${pulse.x}px`,
-                  top: `${pulse.y}px`,
-                  width: '46px',
-                  height: '46px',
-                  border: `2px solid ${pulse.dir === 'AL' ? '#22c55e' : '#ef4444'}`,
-                  boxShadow: `0 0 26px 8px ${pulse.dir === 'AL' ? 'rgba(34,197,94,0.55)' : 'rgba(239,68,68,0.55)'}`
-                }}
-              />
-              <div
-                key={`edge-${pulse.key}`}
-                className="fs-edge-flash pointer-events-none absolute inset-0 z-20"
-                style={{
-                  background:
-                    pulse.dir === 'AL'
-                      ? 'linear-gradient(to bottom, rgba(34,197,94,0.30), transparent 16%, transparent 84%, rgba(34,197,94,0.30))'
-                      : 'linear-gradient(to bottom, rgba(239,68,68,0.30), transparent 16%, transparent 84%, rgba(239,68,68,0.30))'
-                }}
-              />
-            </>
-          )}
-
-          {/* Mum kapanis geri sayimi: 1m/5m scalp'in saniye bilgisi burada */}
-          {countdown !== null && (
-            <div
-              className={`hidden sm:block absolute bottom-[34px] right-[76px] z-30 pointer-events-none select-none font-mono text-[11px] font-bold px-1.5 py-0.5 rounded-md border backdrop-blur-sm ${
-                countdown <= 10
-                  ? 'text-amber-400 border-amber-500/40 bg-amber-500/10'
-                  : 'text-slate-400 border-[#22272e] bg-[#0d1117]/80'
-              }`}
-              title="Mum kapanışına kalan süre"
-            >
-              ⏱ {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
-            </div>
-          )}
-
-        {/* Heatmap Canvas */}
-        {/* Katman z-merdiveni: grafik(z-auto) < heatmap z-10 < ladder z-20 < HUD kartları z-30 < dropdown z-40 */}
-        <canvas
-          ref={heatmapCanvasRef}
-          className="absolute inset-0 pointer-events-none z-10 opacity-70 mix-blend-screen"
-        />
-
-        {/* DOM Ladder & Liquidity Wall Canvas */}
-        <canvas
-          ref={domOverlayCanvasRef}
-          className="absolute inset-0 pointer-events-none z-20"
-        />
-
-{isFullscreen && (
+      {/* Bilgi bandı (canvas dışı): solda sabit OHLC/sembol/⏱/nabız + sağda kayan LİKİDİTE akışı */}
+      <div className="h-9 shrink-0 border-b border-[#1f252e] bg-[#0d1117] flex items-center gap-2 px-2 sm:px-3 overflow-hidden">
+        {isFullscreen && onToggleFullscreen && (
           <button
-            onClick={() => setFsChromeOpen((v) => !v)}
-            className="absolute top-2 right-2 z-50 bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-300 backdrop-blur-sm touch-manipulation active:scale-95"
-            aria-pressed={fsChromeOpen}
-            aria-label={fsChromeOpen ? 'Ayar bantlarını kapat' : 'Zaman dilimi ve gösterge bantlarını aç'}
-            title={fsChromeOpen ? 'Bantları kapat' : 'TF / Göstergeler'}
+            onClick={onToggleFullscreen}
+            className="shrink-0 bg-[#161b22] border border-[#22272e] rounded-md px-2 py-1 text-[11px] font-mono font-bold text-slate-300 touch-manipulation active:scale-95"
+            aria-label="Tam ekrandan çık"
+            title="Tam ekrandan çık (geri tuşu da çalışır)"
           >
-            {fsChromeOpen ? '✕' : '☰'}
+            ↙
           </button>
         )}
-
-        {/* Fullscreen Kompakt Sembol Seçici */}
         {isFullscreen && onSelectSymbol && (
-          <div className="absolute top-2 left-2 z-30 select-none flex items-start gap-1.5">
-            {/* P0: mobilde tam ekrandan cikis gorebilir (geri tusu da calisir) */}
-            <button
-              onClick={onToggleFullscreen}
-              aria-label="Tam ekrandan çık"
-              title="Tam ekrandan çık"
-              className="bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-300 backdrop-blur-sm touch-manipulation active:scale-95"
-            >
-              ↙
-            </button>
+          <div className="relative shrink-0">
             <button
               onClick={() => {
                 setFsSymOpen((v) => !v);
@@ -1882,13 +1656,12 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               }}
               aria-haspopup="listbox"
               aria-expanded={fsSymOpen}
-              className="bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-200 backdrop-blur-sm flex items-center gap-1.5 touch-manipulation active:scale-95"
+              className="bg-[#161b22] border border-[#22272e] rounded-md px-2 py-1 text-[11px] font-mono font-bold text-slate-200 touch-manipulation active:scale-95"
             >
-              {symbol}
-              <span className={`text-slate-400 text-[9px] transition-transform ${fsSymOpen ? 'rotate-180' : ''}`}>▼</span>
+              {symbol} <span className="text-slate-500 text-[8px]">▼</span>
             </button>
             {fsSymOpen && (
-              <div className="absolute top-full left-0 mt-1.5 w-56 bg-[#14181f] border border-[#2a333f] rounded-xl shadow-2xl z-40 overflow-hidden">
+              <div className="absolute top-full left-0 mt-1.5 w-56 bg-[#14181f] border border-[#2a333f] rounded-xl shadow-2xl z-50 overflow-hidden">
                 <input
                   autoFocus
                   value={fsQuery}
@@ -1910,9 +1683,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                           onSelectSymbol(sym);
                           setFsSymOpen(false);
                         }}
-                        className={`px-3 py-2.5 text-xs font-mono cursor-pointer hover:bg-[#1c222b] touch-manipulation ${
-                          sym === symbol ? 'text-emerald-400 font-bold' : 'text-slate-300'
-                        }`}
+                        className={`px-3 py-2.5 text-xs font-mono cursor-pointer hover:bg-[#1c222b] touch-manipulation ${sym === symbol ? 'text-emerald-400 font-bold' : 'text-slate-300'}`}
                       >
                         {sym}
                       </div>
@@ -1922,34 +1693,95 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             )}
           </div>
         )}
-
-        {/* Likidite Overlay Legend — tam ekranda: seçici top-2 → legend top-12 → OHLC satırı top-20 (z-merdiveni: heatmap canvas yorumu) */}
-        {legendOpen && (
-          <div
-            ref={legendRef}
-            className={`absolute left-2 z-30 max-w-[92%] flex-wrap bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 backdrop-blur-sm text-[10px] font-mono text-slate-400 flex items-center gap-x-2 gap-y-1 select-none ${isFullscreen ? 'top-12' : 'top-2'}`}>
-            <span className="text-slate-300 font-bold">LİKİDİTE</span>
-            <span>
-              <span className="text-emerald-400 font-bold">▲ BID</span>
-              {' · '}
-              <span className="text-rose-400 font-bold">▼ ASK</span>
+      {/* Dopamin 5 — canlı veri nabzı */}
+      <div
+      className="flex items-center gap-1.5 mr-1 select-none"
+      title={wsMessage || (wsConnected ? 'Canlı veri akışı aktif' : 'Yeniden bağlanıyor…')}
+      >
+      <span className="relative flex h-2.5 w-2.5">
+      <span
+      className={`h-2.5 w-2.5 rounded-full ${
+      wsConnected ? 'fs-live-dot' : wsMessage ? 'bg-amber-400' : 'bg-rose-500'
+      }`}
+      />
+      </span>
+      <span className={`text-[10px] font-bold hidden sm:inline ${wsConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
+      {wsConnected ? 'CANLI' : wsMessage ? 'REST' : 'OFFLINE'}
+      </span>
+      </div>
+        {(() => {
+          const b = hoverBar ?? (lastCandleRef.current
+            ? { time: lastCandleRef.current.time, o: lastCandleRef.current.open, h: lastCandleRef.current.high, l: lastCandleRef.current.low, c: lastCandleRef.current.close, vol: lastCandleRef.current.volume }
+            : null);
+          if (!b) return null;
+          const up = b.c >= b.o;
+          const chg = b.o ? ((b.c - b.o) / b.o) * 100 : 0;
+          const volTxt = b.vol != null ? new Intl.NumberFormat('tr-TR', { notation: 'compact' }).format(b.vol) : '—';
+          return (
+            <span className="flex items-center gap-2 shrink-0 text-[10px] font-mono text-slate-500">
+              <span>{new Date(b.time * 1000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
+              <span>O <span className="text-slate-300">{b.o}</span></span>
+              <span>H <span className="text-slate-300">{b.h}</span></span>
+              <span>L <span className="text-slate-300">{b.l}</span></span>
+              <span className={up ? 'text-emerald-400' : 'text-rose-400'}>C {b.c} ({up ? '+' : ''}{chg.toFixed(2)}%)</span>
+              <span>V <span className="text-slate-300">{volTxt}</span></span>
             </span>
-            <span>ışın=duvar ≥ P{settings.wallPct || 90}</span>
-            <span>⏱ yerleşik 30s+</span>
-            <button
-              onClick={() => {
-                setLegendOpen(false);
-                try {
-                  localStorage.setItem('fs_legend_closed', 'true');
-                } catch {}
-              }}
-              className="text-slate-500 hover:text-slate-200 ml-1 px-2 min-h-[32px] touch-manipulation active:scale-95"
-              aria-label="Açıklamayı kapat"
-            >
-              ✕
-            </button>
-          </div>
+          );
+        })()}
+        {countdown !== null && (
+          <span className={`shrink-0 text-[10px] font-mono font-bold ${countdown <= 10 ? 'text-amber-400' : 'text-slate-400'}`}>
+            ⏱ {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+          </span>
         )}
+        <div className="flex-1 min-w-0 overflow-hidden" aria-hidden>
+          <div className="fs-marquee text-[10px] font-mono text-slate-500">
+            <span>LİKİDİTE <b className="text-emerald-400">▲ BID</b> · <b className="text-rose-400">▼ ASK</b> · ışın=duvar ≥ P{settings.wallPct || 90} · ⏱ yerleşik 30s+</span>
+            <span>LİKİDİTE <b className="text-emerald-400">▲ BID</b> · <b className="text-rose-400">▼ ASK</b> · ışın=duvar ≥ P{settings.wallPct || 90} · ⏱ yerleşik 30s+</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 flex flex-row">
+      {/* Main Chart Canvas Area */}
+      <div className="chart-wrap flex-1 relative min-h-0 w-full h-full overflow-hidden" ref={containerRef}>
+        {/* chart-wrap = YALNIZCA canvas'lar: fiyat/hacim (lightweight-charts, containerRef'e runtime enjekte) + heatmap z-10 + domOverlay z-20. Metin/bant/rozet canvas üstünde DOM yok. */}
+        <canvas
+          ref={heatmapCanvasRef}
+          className="absolute inset-0 pointer-events-none z-10 opacity-70 mix-blend-screen"
+        />
+
+        {/* DOM Ladder & Liquidity Wall Canvas */}
+        <canvas
+          ref={domOverlayCanvasRef}
+          className="absolute inset-0 pointer-events-none z-20"
+        />
+
+      </div>
+        {/* Akış rozetleri (canvas'ın YANI): ⚡/👻/🐋 mumların üstünde değil yanında */}
+        <div className="hidden sm:flex w-12 shrink-0 flex-col gap-1 p-1 border-l border-[#1f252e] bg-[#0d1117] overflow-hidden">
+          {flowChips.map((c) => (
+            <span key={c.k} title={c.tip} className={`text-[10px] font-mono font-bold leading-tight ${c.cls}`}>
+              {c.icon}{c.txt}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Duvar bandı (canvas dışı): akan duvar tekeri — $ etiketleri canvas'ta değil bantta */}
+      <div className="h-7 shrink-0 border-t border-[#1f252e] bg-[#0d1117] flex items-center overflow-hidden px-2" aria-hidden>
+        <div className="fs-marquee text-[10px] font-mono text-slate-400">
+          {wallTicker.length ? (
+            <>
+              <span>{wallTicker.join('  ·  ')}</span>
+              <span>{wallTicker.join('  ·  ')}</span>
+            </>
+          ) : (
+            <>
+              <span>DUVAR taraması bekleniyor…</span>
+              <span>DUVAR taraması bekleniyor…</span>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

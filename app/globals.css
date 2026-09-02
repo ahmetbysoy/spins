@@ -106,6 +106,30 @@ a,
   }
 }
 
+/* Kayan bantlar: ust LİKİDİTE akisi + alt DUVAR tekeri (chart disi DOM bantlari) */
+.fs-marquee {
+  display: flex;
+  width: max-content;
+  min-width: 200%;
+  animation: fs-marquee 22s linear infinite;
+}
+.fs-marquee > span {
+  flex: 0 0 auto;
+  min-width: 50%;
+  white-space: nowrap;
+  padding-right: 3rem;
+}
+@keyframes fs-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fs-marquee {
+    animation: none;
+    transform: none;
+  }
+}
+
 @theme {
   --breakpoint-xs: 425px;
 }
