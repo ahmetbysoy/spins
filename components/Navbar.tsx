@@ -100,6 +100,18 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
+  // Escape ile dropdown kapatma
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false);
+        setSearchQuery('');
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [searchOpen]);
+
   // Click outside to close search dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -126,6 +138,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="relative min-w-0 flex-1 max-w-xs" ref={searchRef}>
           <button
             onClick={() => setSearchOpen(!searchOpen)}
+            aria-haspopup="listbox"
+            aria-expanded={searchOpen}
             className="w-full flex items-center justify-between gap-1.5 bg-[#161b22] active:bg-[#1f252f] hover:bg-[#1a2029] border border-[#27303c] rounded-lg px-2.5 py-1.5 transition-all text-left min-h-[40px] touch-manipulation"
           >
             <div className="flex items-center gap-1.5 min-w-0">
@@ -144,6 +158,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <input
                   type="text"
                   placeholder="Coin ara (BTC, ETH, SOL...)"
+                  aria-label="Coin ara"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   autoFocus
@@ -172,7 +187,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 </div>
               )}
-              <div className="overflow-y-auto flex-1 divide-y divide-[#1e242d]">
+              <div role="listbox" aria-label="Sembol sonuçları" className="overflow-y-auto flex-1 divide-y divide-[#1e242d]">
                 {filteredSymbols.map((sym) => {
                   const t = tickers.find((x) => x.symbol === sym);
                   const chg = t?.priceChangePercent || 0;
@@ -180,6 +195,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   return (
                     <div
                       key={sym}
+                      role="option"
+                      aria-selected={sym === symbol}
                       onClick={() => handleSelectWithRecent(sym)}
                       className="px-3 py-2.5 hover:bg-[#1c222b] active:bg-[#222935] cursor-pointer flex items-center justify-between group transition-colors touch-manipulation"
                     >
