@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   ArrowUpDown,
@@ -31,6 +31,8 @@ export const MarketScanner: React.FC<MarketScannerProps> = ({
   const [tab, setTab] = useState<'all' | 'gainers' | 'losers' | 'volume' | 'favs'>('volume');
   const [sortField, setSortField] = useState<'quoteVolume' | 'priceChangePercent' | 'lastPrice'>('quoteVolume');
   const [sortAsc, setSortAsc] = useState(false);
+  const [volAsc, setVolAsc] = useState(false); // Hacim sekmesi gerçek yön toggle'ı
+  const [visibleCount, setVisibleCount] = useState(100); // satır limiti
 
   const filteredTickers = useMemo(() => {
     let list = [...tickers];
@@ -47,7 +49,7 @@ export const MarketScanner: React.FC<MarketScannerProps> = ({
     } else if (tab === 'losers') {
       list = list.filter((t) => t.priceChangePercent < 0).sort((a, b) => a.priceChangePercent - b.priceChangePercent);
     } else if (tab === 'volume') {
-      list = list.sort((a, b) => b.quoteVolume - a.quoteVolume);
+      list = list.sort((a, b) => (volAsc ? a.quoteVolume - b.quoteVolume : b.quoteVolume - a.quoteVolume));
     }
 
     if (tab === 'all') {
@@ -59,7 +61,12 @@ export const MarketScanner: React.FC<MarketScannerProps> = ({
     }
 
     return list;
-  }, [tickers, search, tab, favs, sortField, sortAsc]);
+  }, [tickers, search, tab, favs, sortField, sortAsc, volAsc]);
+
+  // Filtre/sekme değişince liste limitini sıfırla
+  useEffect(() => {
+    setVisibleCount(100);
+  }, [search, tab, sortField, sortAsc, volAsc]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#0d1117] p-2.5 sm:p-4 select-none">
@@ -94,14 +101,16 @@ export const MarketScanner: React.FC<MarketScannerProps> = ({
         {/* Filter Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar mask-fade-right py-0.5 shrink-0">
           <button
-            onClick={() => setTab('volume')}
+            onClick={() => (tab === 'volume' ? setVolAsc((v) => !v) : setTab('volume'))}
+            aria-pressed={tab === 'volume' && volAsc}
+            title="Hacim sıralaması (tekrar tıkla: yön değiştir)"
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-all touch-manipulation ${
               tab === 'volume'
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-sm shadow-emerald-500/10'
                 : 'text-slate-400 hover:text-slate-200 bg-[#161b22] border border-[#22272e]'
             }`}
           >
-            <ArrowUpDown className="w-3.5 h-3.5" />
+            <ArrowUpDown className={`w-3.5 h-3.5 transition-transform ${tab === 'volume' && volAsc ? 'rotate-180' : ''}`} />
             <span>Hacim</span>
           </button>
 
@@ -149,7 +158,8 @@ export const MarketScanner: React.FC<MarketScannerProps> = ({
               Eşleşen Futures çifti bulunamadı.
             </div>
           ) : (
-            filteredTickers.map((t) => {
+            <React.Fragment>
+            {filteredTickers.slice(0, visibleCount).map((t) => {
               const isF = favs.includes(t.symbol);
               const isSelected = t.symbol === selectedSymbol;
               const isPositive = t.priceChangePercent >= 0;
@@ -182,7 +192,7 @@ export const MarketScanner: React.FC<MarketScannerProps> = ({
                         <span className="font-bold text-xs sm:text-sm text-slate-100 font-mono tracking-wide truncate">
                           {t.symbol}
                         </span>
-                        <span className="text-[9px] font-bold text-emerald-400 px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 shrink-0 font-mono">
+                        <span className="text-[9px] font-bold text-emerald-400 px-1 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 shrink-0 font-mono">
                           PERP
                         </span>
                       </div>
@@ -209,7 +219,16 @@ export const MarketScanner: React.FC<MarketScannerProps> = ({
                   </div>
                 </div>
               );
-            })
+            })}
+            {filteredTickers.length > visibleCount && (
+              <button
+                onClick={() => setVisibleCount((c) => c + 100)}
+                className="w-full py-3 text-xs font-bold text-emerald-400 hover:bg-[#161b22] transition-colors touch-manipulation min-h-[44px]"
+              >
+                Daha fazla göster ({filteredTickers.length - visibleCount} kaldı)
+              </button>
+            )}
+            </React.Fragment>
           )}
         </div>
       </div>

@@ -19,14 +19,6 @@
     --color-cyan: #22d3ee;
   }
 
-  html.light {
-    --color-bg: #f8fafc;
-    --color-panel: #ffffff;
-    --color-panel-2: #f1f5f9;
-    --color-edge: #e2e8f0;
-    --color-edge-soft: #cbd5e1;
-  }
-
   html, body {
     background-color: var(--color-bg);
     color: #f1f5f9;
@@ -34,9 +26,6 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  html.light body {
-    color: #0f172a;
-  }
 }
 
 .app-shell {
@@ -73,12 +62,6 @@
   border: 1px solid #232a37;
   border-radius: 12px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-
-html.light .card-surface {
-  background: linear-gradient(180deg, #ffffff, #f8fafc);
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02) inset, 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .glow-up {

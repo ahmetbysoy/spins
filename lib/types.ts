@@ -84,7 +84,6 @@ export interface AppSettings {
   sarStep: number;
   sarMax: number;
   nWindow: number;
-  dark: boolean;
   showMa: boolean;
   showSar: boolean;
   showVol: boolean;

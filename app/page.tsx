@@ -89,7 +89,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   sarStep: 0.02,
   sarMax: 0.2,
   nWindow: 3,
-  dark: true,
   showMa: true,
   showSar: true,
   showVol: true,
@@ -1524,6 +1523,8 @@ export default function Home() {
                 flowEvents={flowEvents}
                 lastPrice={lastPrice}
                 symbolInfo={symbolInfos.find((s) => s.symbol === symbol) || null}
+                symbols={symbols}
+                onSelectSymbol={handleSelectSymbol}
                 activePatternStats={activePatternStats}
                 patternOverlay={patternOverlay}
                 onUpdateSetting={handleUpdateSingleSetting}
