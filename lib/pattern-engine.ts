@@ -3,7 +3,7 @@ import { sma, psar, atrRatios, percentile, wilsonLower, avg, std, median } from 
 
 export const PPOOL_SCHEMA_VERSION = 1;
 export const PPOOL_DB_NAME = 'fs_pattern_pool';
-export const PPOOL_DB_VERSION = 1;
+export const PPOOL_DB_VERSION = 2; // v2: signalLog store eklendi (sinyal kalıcılığı)
 export const PPOOL_SAR_BUCKETS: ('SAR0' | 'SAR1' | 'SAR2-3' | 'SARX')[] = ['SAR0', 'SAR1', 'SAR2-3', 'SARX'];
 
 let dbInstance: IDBDatabase | null = null;
@@ -99,6 +99,12 @@ export function initPatternDB(): Promise<boolean> {
       }
       if (!db.objectStoreNames.contains('metadata')) {
         db.createObjectStore('metadata', { keyPath: 'key' });
+      }
+      // v2: Sinyal logu (id string key; sembol/TF bazlı filtreleme uygulama tarafında)
+      if (!db.objectStoreNames.contains('signalLog')) {
+        const signalStore = db.createObjectStore('signalLog', { keyPath: 'id' });
+        signalStore.createIndex('symbol', 'symbol', { unique: false });
+        signalStore.createIndex('timeframe', 'timeframe', { unique: false });
       }
     };
 

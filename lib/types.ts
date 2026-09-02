@@ -125,6 +125,8 @@ export interface AppSettings {
   macdWidth: number;
   macdSignalColor: string;
   macdSignalWidth: number;
+  scanEnabled: boolean;
+  scanTopN: number;
 }
 
 export interface FlowSnapshot {
@@ -174,6 +176,9 @@ export interface SignalLogEntry {
   grade: string;
   reasons: string[];
   patternId?: string | null;
+  /** Kalıcılık için bağlam (eski kayıtlarda bulunmayabilir) */
+  symbol?: string;
+  timeframe?: string;
 }
 
 export interface PatternStats {

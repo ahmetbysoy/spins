@@ -8,6 +8,9 @@ import {
   RefreshCw,
   Volume2,
   VolumeX,
+  Bell,
+  BellOff,
+  BellRing,
   History
 } from 'lucide-react';
 import { Ticker24h } from '@/lib/types';
@@ -30,6 +33,9 @@ interface NavbarProps {
   depthConnected?: boolean;
   wsMessage?: string;
   onReconnect?: () => void;
+  notifyEnabled?: boolean;
+  notifyPermissionState?: 'granted' | 'denied' | 'default' | 'unsupported';
+  onToggleNotify?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -43,7 +49,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   wsConnected,
   marketConnected = true,
   depthConnected = true,
-  onReconnect
+  onReconnect,
+  notifyEnabled = false,
+  notifyPermissionState = 'unsupported',
+  onToggleNotify
 }) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -245,6 +254,37 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           {soundActive ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
         </button>
+
+        {/* Browser Notifications Toggle (40x40 Touch Target) */}
+        {onToggleNotify && (
+          <button
+            onClick={onToggleNotify}
+            className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-colors shrink-0 touch-manipulation active:scale-95 ${
+              notifyEnabled && notifyPermissionState === 'granted'
+                ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                : notifyPermissionState === 'denied'
+                  ? 'bg-[#161b22] border-rose-500/30 text-rose-400/70'
+                  : 'bg-[#161b22] border-[#27303c] text-slate-500'
+            }`}
+            title={
+              notifyPermissionState === 'unsupported'
+                ? 'Tarayıcı bildirimleri desteklenmiyor'
+                : notifyPermissionState === 'denied'
+                  ? 'Bildirim izni reddedilmiş — tarayıcı ayarlarından açabilirsin'
+                  : notifyEnabled
+                    ? 'Tarayıcı Bildirimleri: Açık'
+                    : 'Tarayıcı Bildirimleri: Kapalı (sinyal/radar/whale push)'
+            }
+          >
+            {notifyEnabled && notifyPermissionState === 'granted' ? (
+              <BellRing className="w-4 h-4" />
+            ) : notifyPermissionState === 'denied' ? (
+              <BellOff className="w-4 h-4" />
+            ) : (
+              <Bell className="w-4 h-4" />
+            )}
+          </button>
+        )}
 
         {/* Manual WS Reconnect Button (40x40 Touch Target) */}
         {onReconnect && (

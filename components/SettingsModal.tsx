@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sliders, RotateCcw, ShieldAlert, Activity, BarChart2 } from 'lucide-react';
+import { Sliders, RotateCcw, ShieldAlert, Activity, BarChart2, Radar } from 'lucide-react';
 import { AppSettings } from '@/lib/types';
 
 interface SettingsModalProps {
@@ -206,7 +206,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* 3. İndikatör Görünürlükleri ve Görünüm */}
+        {/* 3. Desen Radarı (Arka Plan Tarayıcı) */}
+        <div className="bg-[#12161c] border border-[#22272e] rounded-xl p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2 border-b border-[#1f252e] pb-2 text-xs font-bold text-slate-200">
+            <Radar className="w-4 h-4 text-cyan-400" />
+            <span>DESEN RADARI (ARKA PLAN TARAYICI)</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+            <label className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between cursor-pointer">
+              <span className="text-slate-300 font-medium">Radar Açık</span>
+              <input
+                type="checkbox"
+                checked={settings.scanEnabled}
+                onChange={(e) => update('scanEnabled', e.target.checked)}
+                className="w-4 h-4 rounded text-cyan-500"
+              />
+            </label>
+
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <label className="text-slate-300 font-medium">Top Hacim Sayısı:</label>
+              <input
+                type="number"
+                min={3}
+                max={30}
+                value={settings.scanTopN}
+                onChange={(e) => update('scanTopN', Math.min(30, Math.max(3, parseInt(e.target.value, 10) || 10)))}
+                className="w-16 bg-[#11151b] border border-[#2e3640] rounded px-2 py-1 text-center font-mono text-slate-100"
+              />
+            </div>
+
+            <div className="bg-[#161b22] border border-[#22272e] rounded-lg p-3 flex items-center justify-between">
+              <span className="text-slate-500 text-[11px] leading-tight">
+                Favorilerin + top hacimli coinleri 1m ve 5m periyotlarında tarar. Radar sinyalleri grafik kurgusudur (Katman 1).
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. İndikatör Görünürlükleri ve Görünüm */}
         <div className="bg-[#12161c] border border-[#22272e] rounded-xl p-4 flex flex-col gap-3">
           <div className="flex items-center gap-2 border-b border-[#1f252e] pb-2 text-xs font-bold text-slate-200">
             <BarChart2 className="w-4 h-4 text-purple-400" />
