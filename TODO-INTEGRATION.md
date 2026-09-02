@@ -163,6 +163,8 @@ Kaynak: `uploads/PREDATOR.html` (analiz: `uploads/PREDATOR-yapisal-analiz.md`). 
 4. **Sinyal oz-skor karti** (`lib/signal-outcomes.ts`): 3/5/7/15dk ✓/✗ chip'leri, mum kapandikca cozumlenir, signalLog'a kalici.
 
 ## BACKLOG
+- **Sağ şerit overlay katmanı** (madde 4): ⚡/👻 marker'lar + duvar etiketi + mumlar aynı bölgede karışık z-20/z-30 — marker'ları mumdan dikey ofsetleyen tek koordinatör (placeLabelY genişletmesi) değerlendirilecek.
+- **Normal mod bar sıkıştırmayı azaltma** (madde 5, tam ekran kısmı çözüldü): status+metrik+TF bantlarını scroll'da otomatik küçültme/gizleme (yok olma değil) — büyük layout işi.
 - **Renk körlüğü modu** (orta öncelik): tüm canvas çizimleri (mum up/down, volume, heatmap, ladder, duvar ışınları, MFE/MAE) TEK renk haritasından alsın (`lib/palette.ts`); alternatif palet turuncu `#f97316` / teal `#14b8a6` + mevcut ▲/▼ şekil ayırt edicileri. Ayar: `settings.colorblind` + ayar paneli satırı. Kapsam: ChartTerminal createChart(upColor/downColor) + volume + 4 canvas bloğu + FlowMetricsPanel/OrderFlowLog rozetleri — büyük iş, bilinçli ertelendi.
 
 ### GENEL DOĞRULAMA (her görev sonrası)

@@ -172,6 +172,14 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const heatmapCanvasRef = useRef<HTMLCanvasElement>(null);
   // Likidite overlay legend'i (kapatilabilir; tercih localStorage'da)
   const [legendOpen, setLegendOpen] = useState(true);
+  // Tam ekran chrome overlay (madde 1): bantlar grafikten düşer, ☰ ile overlay açılır
+  const [fsChromeOpen, setFsChromeOpen] = useState(false);
+  // Lejant gerçek yüksekliği (madde 2): OHLC satırı sabit top-N yerine bununla hizalanır
+  const legendRef = useRef<HTMLDivElement>(null);
+  const [legendH, setLegendH] = useState(22);
+  // Pill satırı kaydırma göstergesi (madde 3)
+  const pillsRef = useRef<HTMLDivElement>(null);
+  const [pillsAtEnd, setPillsAtEnd] = useState(false);
   const [fsSymOpen, setFsSymOpen] = useState(false);
   // Zaman ekseni rotuşları: crosshair mum okuma satırı + mum kapanış geri sayımı
   const [hoverBar, setHoverBar] = useState<{ time: number; o: number; h: number; l: number; c: number; vol?: number } | null>(null);
@@ -183,6 +191,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   lastCandleRef.current = candles.length ? candles[candles.length - 1] : null;
   // Android geri tusu: sembol aramayi kapatir (tam ekrandan once)
   useAndroidBack(fsSymOpen, () => setFsSymOpen(false));
+  useAndroidBack(fsChromeOpen, () => setFsChromeOpen(false));
   const [fsQuery, setFsQuery] = useState('');
   useEffect(() => {
     try {
@@ -590,6 +599,31 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     const t = window.setTimeout(() => setPulse(null), 1600);
     return () => window.clearTimeout(t);
   }, [pulse]);
+
+  // Lejant yuksekligi olc (icerik dar ekranda kirilip buyuse de OHLC dinamik hizalanir)
+  useEffect(() => {
+    if (!legendOpen) return;
+    const el = legendRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setLegendH(el.offsetHeight));
+    ro.observe(el);
+    setLegendH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [legendOpen]);
+
+  // Pill satiri kaydirma durumu (▸ ipucu)
+  useEffect(() => {
+    const el = pillsRef.current;
+    if (!el) return;
+    const check = () => setPillsAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 8);
+    check();
+    el.addEventListener('scroll', check, { passive: true });
+    window.addEventListener('resize', check);
+    return () => {
+      el.removeEventListener('scroll', check);
+      window.removeEventListener('resize', check);
+    };
+  }, []);
 
   // Mum kapanis geri sayimi (1sn tick): son bar zamanindan sonraki cizgiye kalan sure
   useEffect(() => {
@@ -1469,13 +1503,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     }
   };
 
-  return (
-    <div
-      ref={chartWrapperRef}
-      className={`flex-1 flex flex-col min-h-0 bg-[#0d1117] relative select-none w-full ${
-        isFullscreen ? 'fixed inset-0 z-50 h-[100dvh] w-full' : 'h-full'
-      }`}
-    >
+  const chromeBar = (
+    <>
       {/* Timeframe & Indicator Quick Bar (Two-Row Mobile-First Design) */}
       <div className="border-b border-[#1f252e] bg-[#12161c] divide-y divide-[#1a2028] shrink-0">
         {/* Row 1: Timeframes + Fullscreen Action */}
@@ -1549,7 +1578,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         </div>
 
         {/* Row 2: Scrollable Indicator Pills (With Fade Mask & Smooth Touch Scroll) */}
-        <div className="h-8 px-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar mask-fade-right text-xs font-mono">
+        <div className="relative">
+        <div
+          ref={pillsRef}
+          className="h-8 px-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar mask-fade-right text-xs font-mono"
+        >
           <button
             onClick={() => toggleInd('showMa')}
             className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
@@ -1681,7 +1714,39 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             MACD
           </button>
         </div>
+
+          {/* Madde 3: kaydırılabilir ipucu — sağda içerik varsa ▸ */}
+          {!pillsAtEnd && (
+            <button
+              onClick={() => pillsRef.current?.scrollBy({ left: 240, behavior: 'smooth' })}
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-7 px-1.5 flex items-center bg-gradient-to-l from-[#12161c] via-[#12161c] to-transparent text-slate-400 touch-manipulation active:scale-95"
+              aria-label="Göstergeleri sağa kaydır"
+              title="Daha fazla gösterge (kaydırılabilir)"
+            >
+              ▸
+            </button>
+          )}
+        </div>
       </div>
+    </>
+  );
+
+  return (
+    <div
+      ref={chartWrapperRef}
+      className={`flex-1 flex flex-col min-h-0 bg-[#0d1117] relative select-none w-full ${
+        isFullscreen ? 'fixed inset-0 z-50 h-[100dvh] w-full' : 'h-full'
+      }`}
+    >
+{isFullscreen ? (
+        fsChromeOpen && (
+          <div className="absolute top-0 left-1 right-1 z-40 mt-9 rounded-lg border border-[#22272e] bg-[#12161c]/95 backdrop-blur-sm shadow-2xl overflow-hidden">
+            {chromeBar}
+          </div>
+        )
+      ) : (
+        chromeBar
+      )}
 
       {/* Main Chart Canvas Area */}
       <div className="chart-wrap flex-1 relative min-h-0 w-full h-full overflow-hidden" ref={containerRef}>
@@ -1709,9 +1774,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             const volTxt = b.vol != null ? new Intl.NumberFormat('tr-TR', { notation: 'compact' }).format(b.vol) : '—';
             return (
               <div
-                className={`absolute left-2 z-30 pointer-events-none select-none bg-[#0d1117]/80 backdrop-blur-sm border border-[#22272e] rounded-md px-2 py-1 text-[10px] font-mono flex flex-wrap items-center gap-x-2 gap-y-0.5 max-w-[92%] ${
-                  isFullscreen ? (legendOpen ? 'top-20' : 'top-12') : legendOpen ? 'top-10' : 'top-2'
-                }`}
+                className="absolute left-2 z-30 pointer-events-none select-none bg-[#0d1117]/80 backdrop-blur-sm border border-[#22272e] rounded-md px-2 py-1 text-[10px] font-mono flex flex-wrap items-center gap-x-2 gap-y-0.5 max-w-[92%]"
+                style={{ top: (legendOpen ? (isFullscreen ? 48 : 8) + legendH + 6 : isFullscreen ? 48 : 8) }}
               >
                 <span className="text-slate-400">
                   {new Date(b.time * 1000).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -1787,6 +1851,18 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           className="absolute inset-0 pointer-events-none z-20"
         />
 
+{isFullscreen && (
+          <button
+            onClick={() => setFsChromeOpen((v) => !v)}
+            className="absolute top-2 right-2 z-50 bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-300 backdrop-blur-sm touch-manipulation active:scale-95"
+            aria-pressed={fsChromeOpen}
+            aria-label={fsChromeOpen ? 'Ayar bantlarını kapat' : 'Zaman dilimi ve gösterge bantlarını aç'}
+            title={fsChromeOpen ? 'Bantları kapat' : 'TF / Göstergeler'}
+          >
+            {fsChromeOpen ? '✕' : '☰'}
+          </button>
+        )}
+
         {/* Fullscreen Kompakt Sembol Seçici */}
         {isFullscreen && onSelectSymbol && (
           <div className="absolute top-2 left-2 z-30 select-none flex items-start gap-1.5">
@@ -1849,7 +1925,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
         {/* Likidite Overlay Legend — tam ekranda: seçici top-2 → legend top-12 → OHLC satırı top-20 (z-merdiveni: heatmap canvas yorumu) */}
         {legendOpen && (
-          <div className={`absolute left-2 z-30 bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 backdrop-blur-sm text-[10px] font-mono text-slate-400 flex items-center gap-2 select-none ${isFullscreen ? 'top-12' : 'top-2'}`}>
+          <div
+            ref={legendRef}
+            className={`absolute left-2 z-30 max-w-[92%] flex-wrap bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 backdrop-blur-sm text-[10px] font-mono text-slate-400 flex items-center gap-x-2 gap-y-1 select-none ${isFullscreen ? 'top-12' : 'top-2'}`}>
             <span className="text-slate-300 font-bold">LİKİDİTE</span>
             <span>
               <span className="text-emerald-400 font-bold">▲ BID</span>
