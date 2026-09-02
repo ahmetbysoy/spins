@@ -227,21 +227,21 @@ export const FlowMetricsPanel: React.FC<FlowMetricsPanelProps> = ({
         </span>
       </div>
 
-      <div className="hidden sm:flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
+      <div className="flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
         <span className="text-slate-500 font-bold">Fund:</span>
         <span className={`font-bold ${flow.funding && flow.funding > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
           {flow.funding !== null ? `${(flow.funding * 100).toFixed(4)}%` : '---'}
         </span>
       </div>
 
-      <div className="hidden sm:flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
+      <div className="flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
         <span className="text-slate-500 font-bold">Liq:</span>
         <span className="text-rose-400 font-bold">${compact(flow.longLiq60)}</span>
         <span className="text-slate-600">/</span>
         <span className="text-emerald-400 font-bold">${compact(flow.shortLiq60)}</span>
       </div>
 
-      <div className="hidden sm:flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
+      <div className="flex items-center gap-1.5 bg-[#161b22] px-2 py-1 rounded-md border border-[#22272e] shrink-0">
         <span className="text-slate-500 font-bold">Duvar:</span>
         <span className="text-emerald-400 font-bold">{flow.wallCount.bid}</span>
         <span className="text-slate-600">/</span>

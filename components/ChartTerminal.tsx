@@ -1912,7 +1912,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               }`}
             />
           </span>
-          <span className={`text-[10px] font-bold hidden md:inline ${wsConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
+          <span className={`text-[10px] font-bold ${wsConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
             {wsConnected ? 'CANLI' : wsMessage ? 'REST' : 'OFFLINE'}
           </span>
         </div>
@@ -1928,7 +1928,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           const volTxt = b.vol != null ? fmtCompact(b.vol) : '—';
           return (
             <>
-              <span className="hidden sm:flex items-center gap-1.5 shrink-0 text-[10px] font-mono text-slate-500 whitespace-nowrap">
+              <span className="hidden sm:flex items-center gap-1.5 shrink-0 text-[11px] font-mono text-slate-500 whitespace-nowrap">
                 <span>{new Date(b.time * 1000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
                 <span>O <span className="text-slate-300">{fmtNum(b.o, pr)}</span></span>
                 <span>H <span className="text-slate-300">{fmtNum(b.h, pr)}</span></span>
@@ -1936,19 +1936,19 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                 <span className={up ? 'text-emerald-400' : 'text-rose-400'}>C {fmtNum(b.c, pr)} ({up ? '+' : ''}{chg.toFixed(2)}%)</span>
                 <span>V <span className="text-slate-300">{volTxt}</span></span>
               </span>
-              <span className={`sm:hidden shrink-0 text-[10px] font-mono font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+              <span className={`sm:hidden shrink-0 text-[11px] font-mono font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {fmtNum(b.c, pr)} {up ? '▲' : '▼'}{Math.abs(chg).toFixed(2)}%
               </span>
             </>
           );
         })()}
         {countdown !== null && (
-          <span className={`shrink-0 text-[10px] font-mono font-bold ${countdown <= 10 ? 'text-amber-400' : 'text-slate-400'}`}>
+          <span className={`shrink-0 text-[11px] font-mono font-bold ${countdown <= 10 ? 'text-amber-400' : 'text-slate-400'}`}>
             ⏱ {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
           </span>
         )}
         {/* LİKİDİTE lejantı (SABİT, akmaz — lg+ ekranda): işaret açıklaması */}
-        <div className="hidden lg:flex items-center gap-1 shrink-0 text-[10px] font-mono text-slate-500 whitespace-nowrap" title="LİKİDİTE işaretleri">
+        <div className="hidden lg:flex items-center gap-1 shrink-0 text-[11px] font-mono text-slate-500 whitespace-nowrap" title="LİKİDİTE işaretleri">
           <b className="text-emerald-400">▲ BID</b>
           <b className="text-rose-400">▼ ASK</b>
           <span>· ışın=duvar ≥P{settings.wallPct || 90} · ⏱=yerleşik 30s+</span>
@@ -1962,7 +1962,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           onPointerLeave={() => setTickerRunning(true)}
           title="Banda dokun = duraklat, bırak = kaldığı hızdan devam"
         >
-          <div ref={topTrackRef} className="ticker-track text-[10px] font-mono">
+          <div ref={topTrackRef} className="ticker-track text-[11px] font-mono">
             {renderTickerHalf(topTicker, false)}
             {renderTickerHalf(topTicker, true)}
           </div>
@@ -1986,7 +1986,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
       </div>
         {/* Akış rozetleri (canvas'ın YANI): ⚡/👻/🐋 mumların üstünde değil yanında */}
-        <div className="hidden sm:flex w-12 shrink-0 flex-col gap-1 p-1 border-l border-[#1f252e] bg-[#0d1117] overflow-hidden">
+        <div className="flex w-12 shrink-0 flex-col gap-1 p-1 border-l border-[#1f252e] bg-[#0d1117] overflow-hidden">
           {flowChips.map((c) => (
             <span key={c.k} title={c.tip} className={`text-[10px] font-mono font-bold leading-tight ${c.cls}`}>
               {c.icon}{c.txt}
@@ -2005,7 +2005,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           onPointerLeave={() => setTickerRunning(true)}
           title="Banda dokun = duraklat, bırak = kaldığı hızdan devam"
         >
-          <div ref={botTrackRef} className="ticker-track text-[10px] font-mono">
+          <div ref={botTrackRef} className="ticker-track text-[11px] font-mono">
             {renderTickerHalf(botTicker, false)}
             {renderTickerHalf(botTicker, true)}
           </div>

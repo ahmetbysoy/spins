@@ -31,7 +31,7 @@ export const metadata: Metadata = {
 export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning>
+      <body suppressHydrationWarning className="mx-auto w-full max-w-[480px] sm:border-x sm:border-[#1f252e]">
         {children}
         <ToastProvider />
       </body>
