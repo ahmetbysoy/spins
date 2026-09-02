@@ -1,8 +1,10 @@
 # Spins — Android APK
 
-Uygulama, **Capacitor** kabuğudur: `com.ahmetbysoy.spins`, açılışta canlı siteyi
-(`https://ahmetbysoy-spins.vercel.app`) tam ekran WebView'da açar. Ayrık native paket yoktur;
-her deploy'da site güncellenir, APK yeniden build gerekmez.
+Uygulama **tamamen gömülüdür**: `next build` statik export'u (`NEXT_STATIC=1` → `out/`)
+APK'nın içine paketlenir — Vercel'e bağımlılık yoktur, uçak modunda bile arayüz açılır.
+Veri akışı: WebSocket doğrudan Binance'e (WebSocket'e CORS uygulanmaz), REST ise
+`lib/rest-race.ts` CORS-proxy havuzundan (gömülü modda `/api/binance` adayı atlanır).
+Vercel deployment'u kendi hayatına devam eder; APK'yı güncellemek için yeniden build gerekir.
 
 ## Otomatik build (GitHub Actions → `.github/workflows/apk.yml`)
 - **Elle**: Actions → **APK** → *Run workflow* → artifact olarak `spins-apk` indirilir.
@@ -28,15 +30,16 @@ Sırlar tanımlıysa workflow `assembleRelease` da koşar; değilse yalnızca de
 
 ## Yerel build
 ```bash
-npm ci && npx cap sync android
+rm -rf app/api && NEXT_STATIC=1 npx next build && mv app/api app/api 2>/dev/null; git checkout app/api
+npx cap sync android
 cd android && ./gradlew assembleDebug
 # çıktı: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ## Çevrimdışı / hata ekranı
-Site yüklenemezse (ağ kesintisi vb.) WebView `public/offline.html`'e düşer:
-SPINS ekranı + "Tekrar Dene" + 10sn otomatik yeniden deneme.
+Kabuk yereldir; veri bağlantısı yoksa `public/offline.html` bilgi ekranı gösterilir
+("Tekrar Dene" = sayfayı yeniler). Arayüz açılır, akış internet gelince başlar.
 
 ## Kabuk ayarları
-`capacitor.config.json` — hedef URL, appId, uygulama adı. İkon/splash:
+`capacitor.config.json` — `webDir: out`, appId, uygulama adı. İkon/splash:
 `android/app/src/main/res/` (koyu tema, neon mum ikonu).

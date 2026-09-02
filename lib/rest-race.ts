@@ -73,11 +73,20 @@ export function isRouteFresh(route: RestRoute | null, now = Date.now()): boolean
   return !!route && now - route.ts < ROUTE_TTL_MS && route.ms < ROUTE_MAX_MS && restErrorCount === 0;
 }
 
-export function buildRestCandidates(path: string): RouteCandidate[] {
-  const raw: RouteCandidate[] = [
-    { name: 'proxy:server', url: `${SERVER_PROXY_BASE}${path}` },
-    { name: 'direct:fapi', url: `${FAPI_BASE}${path}` }
-  ];
+/** Gömülü APK WebView'i (capacitor https://localhost): yerel sunucu yok —
+ *  '/api/binance' adayı anlamsız (404), doğrudan fapi + CORS proxy'lerle başlanır. */
+export function isEmbeddedWebview(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'https:' &&
+    window.location.hostname === 'localhost'
+  );
+}
+
+export function buildRestCandidates(path: string, embedded: boolean = isEmbeddedWebview()): RouteCandidate[] {
+  const raw: RouteCandidate[] = [];
+  if (!embedded) raw.push({ name: 'proxy:server', url: `${SERVER_PROXY_BASE}${path}` });
+  raw.push({ name: 'direct:fapi', url: `${FAPI_BASE}${path}` });
   const prox = CORS_PROXIES.map((pr) => ({ name: `${pr.name}:fapi`, url: pr.wrap(`${FAPI_BASE}${path}`) }));
   const all = [...raw, ...prox];
   const cached = loadRoute();

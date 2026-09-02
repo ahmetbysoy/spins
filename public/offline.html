@@ -29,15 +29,15 @@
 <body>
   <div class="logo">SPINS</div>
   <h1>Canlı terminale ulaşılamıyor</h1>
-  <p>İnternet bağlantını ya da ağ erişimini kontrol et. Terminal açıldığında veri akışı otomatik başlar.</p>
-  <button onclick="location.replace('https://ahmetbysoy-spins.vercel.app')">Tekrar Dene</button>
+  <p>Uygulama kabuğu telefonda kurulu; canlı fiyat akışı için internet bağlantısı gerekiyor.</p>
+  <button onclick="location.reload()">Tekrar Dene</button>
   <div class="hint" id="hint">10 saniye içinde otomatik yeniden denenecek…</div>
   <script>
     var left = 10;
     var t = setInterval(function () {
       left--;
       var el = document.getElementById('hint');
-      if (left <= 0) { clearInterval(t); el.textContent = 'Yeniden deneniyor…'; location.replace('https://ahmetbysoy-spins.vercel.app'); }
+      if (left <= 0) { clearInterval(t); el.textContent = 'Yeniden deneniyor…'; location.reload(); }
       else { el.textContent = left + ' saniye içinde otomatik yeniden denenecek…'; }
     }, 1000);
   </script>

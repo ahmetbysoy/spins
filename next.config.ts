@@ -19,7 +19,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  output: 'standalone',
+  // APK gömülü kabuk: NEXT_STATIC=1 ile statik export (out/) — Vercel'den bağımsız.
+  // Varsayılan (Vercel/CI) standalone olarak kalır; iki yol birbirini etkilemez.
+  output: process.env.NEXT_STATIC === '1' ? 'export' : 'standalone',
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.
     // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

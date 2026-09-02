@@ -46,7 +46,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Sync Capacitor Android
+      - name: Build static export (gömülü kabuk — Vercel'den bağımsız)
+        env:
+          NEXT_STATIC: '1'
+        run: |
+          rm -rf app/api  # route handler'lar statik export'u desteklemez; APK'da veri WS (CORS'suz) + CORS-proxy REST'ten gelir
+          npx next build
+          test -f out/index.html
+
+      - name: Sync Capacitor Android (out/ -> assets/public)
         run: npx cap sync android
 
       - name: Build debug APK (her zaman — kurulum için hazır)

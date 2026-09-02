@@ -48,3 +48,16 @@ describe("rest-race (PREDATOR port)", () => {
     expect(isRouteFresh(null, now)).toBe(false);
   });
 });
+
+describe("rest-race gömülü APK modu", () => {
+  it("embedded=true: yerel proxy adayı yok, direct + 3 CORS proxy (4 aday)", () => {
+    const c = buildRestCandidates("/fapi/v1/time", true);
+    expect(c.map((x) => x.name)).toEqual(["direct:fapi", "allorigins:fapi", "corsproxy:fapi", "codetabs:fapi"]);
+  });
+
+  it("embedded=false: normal 5 aday (sunucu proxy önde)", () => {
+    const c = buildRestCandidates("/fapi/v1/time", false);
+    expect(c[0].name).toBe("proxy:server");
+    expect(c).toHaveLength(5);
+  });
+});

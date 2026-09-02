@@ -1,12 +1,12 @@
 {
   "appId": "com.ahmetbysoy.spins",
   "appName": "Spins",
-  "webDir": "public",
+  "webDir": "out",
   "server": {
-    "url": "https://ahmetbysoy-spins.vercel.app",
     "cleartext": false,
     "androidScheme": "https",
-    "errorPath": "offline.html"
+    "errorPath": "offline.html",
+    "hostname": "localhost"
   },
   "android": {
     "allowMixedContent": false

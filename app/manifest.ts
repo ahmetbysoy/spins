@@ -1,5 +1,8 @@
 import type { MetadataRoute } from 'next';
 
+// Statik metadata route'u — output:export (APK kabuğu) bunu ister; normal build etkilenmez
+export const dynamic = 'force-static';
+
 // PWA — "Ana ekrana ekle" (APK'siz kurulum); ikonlar android/icon-master.png'den üretildi
 export default function manifest(): MetadataRoute.Manifest {
   return {
