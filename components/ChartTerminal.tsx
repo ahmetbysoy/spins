@@ -50,6 +50,9 @@ interface ChartTerminalProps {
   flowEvents: FlowEvent[];
   lastPrice: number;
   symbolInfo?: SymbolInfo | null;
+  /** Fullscreen modunda kompakt sembol geçişi için (opsiyonel) */
+  symbols?: string[];
+  onSelectSymbol?: (sym: string) => void;
   activePatternStats?: PatternStats | null;
   patternOverlay?: PatternOverlayState | null;
   onUpdateSetting?: (key: keyof AppSettings, val: any) => void;
@@ -99,6 +102,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   flowEvents,
   lastPrice,
   symbolInfo,
+  symbols,
+  onSelectSymbol,
   activePatternStats,
   patternOverlay,
   onUpdateSetting,
@@ -133,6 +138,16 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
   // Overlay Canvases
   const heatmapCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Likidite overlay legend'i (kapatilabilir; tercih localStorage'da)
+  const [legendOpen, setLegendOpen] = useState(true);
+  const [fsSymOpen, setFsSymOpen] = useState(false);
+  const [fsQuery, setFsQuery] = useState('');
+  useEffect(() => {
+    try {
+      setLegendOpen(localStorage.getItem('fs_legend_closed') !== 'true');
+    } catch {}
+  }, []);
+
   const domOverlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Browser Native Fullscreen Toggle
@@ -838,7 +853,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         if (ctx) {
           ctx.clearRect(0, 0, width, height);
 
-          const chartRight = width - 58;
+          // Dinamik fiyat ekseni genisligi (sembol hassasiyetine gore; sabit 58px yerine)
+          const axisWidth = Math.max(58, chart.priceScale('right').width?.() ?? 58);
+          const chartRight = width - axisWidth;
           const ladderWidth = 52;
           const ladderLeft = chartRight - ladderWidth;
 
@@ -905,9 +922,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               ctx.stroke();
 
               // Mini notional tag (with ⏱ if resting for >= 25s)
-              ctx.font = '9px monospace';
-              ctx.fillStyle = 'rgba(239, 83, 80, 0.9)';
-              const tag = `${isEstablished ? '⏱ ' : ''}$${(notional / 1000).toFixed(0)}k`;
+              ctx.font = '11px monospace';
+              ctx.fillStyle = 'rgba(239, 83, 80, 0.95)';
+              const tag = `${isEstablished ? '⏱ ' : ''}▼$${(notional / 1000).toFixed(0)}k`;
               ctx.fillText(tag, rayStart + 5, slotY - 3);
             } else {
               wallAgesRef.current.delete(slotKey);
@@ -945,9 +962,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               ctx.stroke();
 
               // Mini notional tag (with ⏱ if resting for >= 25s)
-              ctx.font = '9px monospace';
-              ctx.fillStyle = 'rgba(38, 166, 154, 0.9)';
-              const tag = `${isEstablished ? '⏱ ' : ''}$${(notional / 1000).toFixed(0)}k`;
+              ctx.font = '11px monospace';
+              ctx.fillStyle = 'rgba(38, 166, 154, 0.95)';
+              const tag = `${isEstablished ? '⏱ ' : ''}▲$${(notional / 1000).toFixed(0)}k`;
               ctx.fillText(tag, rayStart + 5, slotY - 3);
             } else {
               wallAgesRef.current.delete(slotKey);
@@ -1107,6 +1124,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                 : 'text-slate-400 hover:text-slate-200 bg-[#161b22] border-[#22272e]'
             }`}
             title={isFullscreen ? 'Tam Ekrandan Çık (Esc)' : 'Tam Ekran Grafik Modu'}
+            aria-label={isFullscreen ? 'Tam Ekrandan Çık' : 'Tam Ekran Grafik Modu'}
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
             <span className="text-[10px] hidden sm:inline">{isFullscreen ? 'Kapat' : 'Genişlet'}</span>
@@ -1117,96 +1135,117 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         <div className="h-8 px-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar mask-fade-right text-xs font-mono">
           <button
             onClick={() => toggleInd('showMa')}
-            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
+            className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
               settings.showMa
                 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold'
                 : 'text-slate-500 border-[#22272e] hover:text-slate-300'
             }`}
             title="Moving Averages (MA 9/21/50)"
+            aria-label="Moving Averages (MA 9/21/50)"
+            aria-pressed={settings.showMa}
           >
             MA 9/21/50
           </button>
 
           <button
             onClick={() => toggleInd('showSar')}
-            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
+            className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
               settings.showSar
-                ? 'bg-sky-500/20 text-sky-300 border-sky-500/40 font-bold'
+                ? 'font-bold'
                 : 'text-slate-500 border-[#22272e] hover:text-slate-300'
             }`}
+            style={
+              settings.showSar
+                ? { color: settings.sarColor, borderColor: `${settings.sarColor}66`, background: `${settings.sarColor}22` }
+                : undefined
+            }
             title="Parabolic SAR"
+            aria-label="Parabolic SAR"
+            aria-pressed={settings.showSar}
           >
             SAR
           </button>
 
           <button
             onClick={() => toggleInd('showVwap')}
-            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
+            className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
               settings.showVwap
                 ? 'bg-orange-500/20 text-orange-300 border-orange-500/40 font-bold'
                 : 'text-slate-500 border-[#22272e] hover:text-slate-300'
             }`}
             title="VWAP"
+            aria-label="VWAP"
+            aria-pressed={settings.showVwap}
           >
             VWAP
           </button>
 
           <button
             onClick={() => toggleInd('showHeatmap')}
-            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
+            className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
               settings.showHeatmap
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold'
                 : 'text-slate-500 border-[#22272e] hover:text-slate-300'
             }`}
             title="Likidite Isı Haritası (Heatmap)"
+            aria-label="Likidite Isı Haritası (Heatmap)"
+            aria-pressed={settings.showHeatmap}
           >
             HEATMAP
           </button>
 
           <button
             onClick={() => toggleInd('showLadder')}
-            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
+            className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
               settings.showLadder
                 ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold'
                 : 'text-slate-500 border-[#22272e] hover:text-slate-300'
             }`}
             title="DOM Ladder & Duvarlar"
+            aria-label="DOM Ladder & Duvarlar"
+            aria-pressed={settings.showLadder}
           >
             DOM LADDER
           </button>
 
           <button
             onClick={() => toggleInd('showBB')}
-            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
+            className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
               settings.showBB
                 ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 font-bold'
                 : 'text-slate-500 border-[#22272e] hover:text-slate-300'
             }`}
             title="Bollinger Bands"
+            aria-label="Bollinger Bands"
+            aria-pressed={settings.showBB}
           >
             BB
           </button>
 
           <button
             onClick={() => toggleInd('showRsi')}
-            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
+            className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
               settings.showRsi
                 ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 font-bold'
                 : 'text-slate-500 border-[#22272e] hover:text-slate-300'
             }`}
             title="RSI Oscillator"
+            aria-label="RSI Oscillator"
+            aria-pressed={settings.showRsi}
           >
             RSI
           </button>
 
           <button
             onClick={() => toggleInd('showMacd')}
-            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
+            className={`px-2.5 py-1.5 leading-none min-h-[28px] flex items-center rounded-md border text-[11px] font-bold shrink-0 transition-colors touch-manipulation ${
               settings.showMacd
                 ? 'bg-teal-500/20 text-teal-300 border-teal-500/40 font-bold'
                 : 'text-slate-500 border-[#22272e] hover:text-slate-300'
             }`}
             title="MACD"
+            aria-label="MACD"
+            aria-pressed={settings.showMacd}
           >
             MACD
           </button>
@@ -1226,6 +1265,83 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           ref={domOverlayCanvasRef}
           className="absolute inset-0 pointer-events-none z-20"
         />
+
+        {/* Fullscreen Kompakt Sembol Seçici */}
+        {isFullscreen && onSelectSymbol && (
+          <div className="absolute top-2 left-2 z-30 select-none">
+            <button
+              onClick={() => {
+                setFsSymOpen((v) => !v);
+                setFsQuery('');
+              }}
+              aria-haspopup="listbox"
+              aria-expanded={fsSymOpen}
+              className="bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-200 backdrop-blur-sm flex items-center gap-1.5 touch-manipulation active:scale-95"
+            >
+              {symbol}
+              <span className={`text-slate-400 text-[9px] transition-transform ${fsSymOpen ? 'rotate-180' : ''}`}>▼</span>
+            </button>
+            {fsSymOpen && (
+              <div className="absolute top-full left-0 mt-1.5 w-56 bg-[#14181f] border border-[#2a333f] rounded-xl shadow-2xl z-40 overflow-hidden">
+                <input
+                  autoFocus
+                  value={fsQuery}
+                  onChange={(e) => setFsQuery(e.target.value)}
+                  placeholder="Coin ara"
+                  aria-label="Coin ara"
+                  className="w-full bg-[#181e26] border-b border-[#2b3542] px-3 py-2 text-xs font-mono uppercase outline-none text-slate-100 placeholder-slate-500"
+                />
+                <div role="listbox" aria-label="Sembol sonuçları" className="max-h-56 overflow-y-auto divide-y divide-[#1e242d]">
+                  {(symbols || [])
+                    .filter((q) => q.toLowerCase().includes(fsQuery.toLowerCase()))
+                    .slice(0, 8)
+                    .map((sym) => (
+                      <div
+                        key={sym}
+                        role="option"
+                        aria-selected={sym === symbol}
+                        onClick={() => {
+                          onSelectSymbol(sym);
+                          setFsSymOpen(false);
+                        }}
+                        className={`px-3 py-2.5 text-xs font-mono cursor-pointer hover:bg-[#1c222b] touch-manipulation ${
+                          sym === symbol ? 'text-emerald-400 font-bold' : 'text-slate-300'
+                        }`}
+                      >
+                        {sym}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Likidite Overlay Legend */}
+        {legendOpen && (
+          <div className="absolute bottom-2 left-2 z-30 bg-[#0d1117]/85 border border-[#22272e] rounded-lg px-2.5 py-1.5 backdrop-blur-sm text-[10px] font-mono text-slate-400 flex items-center gap-2 select-none">
+            <span className="text-slate-300 font-bold">LİKİDİTE</span>
+            <span>
+              <span className="text-emerald-400 font-bold">▲ BID</span>
+              {' · '}
+              <span className="text-rose-400 font-bold">▼ ASK</span>
+            </span>
+            <span>ışın=duvar ≥ P{settings.wallPct || 90}</span>
+            <span>⏱ yerleşik 25s+</span>
+            <button
+              onClick={() => {
+                setLegendOpen(false);
+                try {
+                  localStorage.setItem('fs_legend_closed', 'true');
+                } catch {}
+              }}
+              className="text-slate-500 hover:text-slate-200 ml-1 px-1 min-h-[24px]"
+              aria-label="Açıklamayı kapat"
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
